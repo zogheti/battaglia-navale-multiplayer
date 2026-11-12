@@ -1,4 +1,4 @@
-/* Battaglia Navale - Multiplayer Firebase (Modular SDK v10) */
+/* Battaglia Navale - Multiplayer Firebase (Corretto e Ottimizzato) */
 "use strict";
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
@@ -28,7 +28,7 @@ const FLEET_TEMPLATE = [
     { length: 3, label: "Incrociatore", count: 1, image: "assets/ships/3incrociatore.gif" },
     { length: 4, label: "Corazzata", count: 1, image: "assets/ships/4incrociatore.gif" },
     { length: 5, label: "Portaerei", count: 1, image: "assets/ships/5portaerei.gif" }
-];
+];[cite: 1]
 
 const SHIP_IMAGES = {
     1: "assets/ships/1elicottero.gif",
@@ -36,7 +36,7 @@ const SHIP_IMAGES = {
     3: "assets/ships/3sottomarino.gif",
     4: "assets/ships/4incrociatore.gif",
     5: "assets/ships/5portaerei.gif"
-};
+};[cite: 1]
 
 const SOUND_FILES = {
     shot: "assets/sounds/shot.mp3",
@@ -47,7 +47,7 @@ const SOUND_FILES = {
     defeat: "assets/sounds/defeat.mp3",
     click: "assets/sounds/click.mp3",
     inizio: "assets/sounds/inizio.mp3"
-};
+};[cite: 1]
 
 const $ = id => document.getElementById(id);
 
@@ -91,6 +91,7 @@ const game = {
     roomCode: null,
     playerRole: null,
     playerShips: [],
+    enemyShips: [],
     myShots: new Set(),
     opponentShots: new Set(),
     selectedShipId: null,
@@ -118,7 +119,7 @@ function makeFleet() {
             });
         }
     });
-    return fleet.sort((a, b) => b.length - a.length);
+    return fleet.sort((a, b) => b.length - a.length);[cite: 1]
 }
 
 const key = (r, c) => `${r},${c}`;
@@ -126,7 +127,7 @@ const inBounds = (r, c) => r >= 0 && r < SIZE && c >= 0 && c < SIZE;
 const cellLabel = (r, c) => `${LETTERS[c]}${r + 1}`;
 
 function shipAt(ships, r, c) {
-    return ships.find(ship => ship.cells.some(([sr, sc]) => sr === r && sc === c));
+    return ships.find(ship => ship.cells && ship.cells.some(([sr, sc]) => sr === r && sc === c));
 }
 
 function setStatus(title, message, color = "gold") {
@@ -141,7 +142,7 @@ function setStatus(title, message, color = "gold") {
 
     const current = colors[color] || colors.gold;
     ui.statusLight.style.background = current.bg;
-    ui.statusLight.style.boxShadow = `0 0 12px ${current.shadow}`;
+    ui.statusLight.style.boxShadow = `0 0 12px ${current.shadow}`;[cite: 1]
 }
 
 function playSound(name) {
@@ -158,7 +159,7 @@ function shipImage(ship, className = "ship-image") {
     img.draggable = false;
     img.src = ship.image || SHIP_IMAGES[ship.length];
     img.onerror = () => img.remove();
-    return img;
+    return img;[cite: 1]
 }
 
 function getPlacementCells(r, c, length, dir) {
@@ -169,7 +170,7 @@ function getPlacementCells(r, c, length, dir) {
             c + (dir === "H" ? i : 0)
         ]);
     }
-    return cells;
+    return cells;[cite: 1]
 }
 
 function isPlacementValid(cells, ships, ignoredShipId = null) {
@@ -188,7 +189,7 @@ function isPlacementValid(cells, ships, ignoredShipId = null) {
             }
         }
     }
-    return true;
+    return true;[cite: 1]
 }
 
 function placeShip(ship, r, c, dir, ships) {
@@ -218,7 +219,7 @@ function randomPlacement(ships) {
         }
         if (!placed) return false;
     }
-    return true;
+    return true;[cite: 1]
 }
 
 function createBoard(container, boardType) {
@@ -264,7 +265,7 @@ function createBoard(container, boardType) {
             board.appendChild(cell);
         }
     }
-    container.appendChild(board);
+    container.appendChild(board);[cite: 1]
 }
 
 const getBoardCell = (container, r, c) => container.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
@@ -303,11 +304,11 @@ function renderFleetList() {
             renderSetupBoard();
         });
         ui.fleetList.appendChild(button);
-    });
+    });[cite: 1]
 }
 
 function addShipOverlay(board, ship) {
-    if (!ship.cells.length) return;
+    if (!ship.cells || !ship.cells.length) return;
     const [startR, startC] = ship.cells[0];
     const [endR, endC] = ship.cells[ship.cells.length - 1];
 
@@ -349,7 +350,7 @@ function addShipOverlay(board, ship) {
         img.style.height = `${areaHeight}px`;
         img.style.transform = "none";
     }
-    board.appendChild(img);
+    board.appendChild(img);[cite: 1]
 }
 
 function addFireOverlay(cell) {
@@ -366,7 +367,7 @@ function addFireOverlay(cell) {
     fireImg.style.objectFit = "contain";
     fireImg.style.zIndex = "10";
     fireImg.style.pointerEvents = "none";
-    cell.appendChild(fireImg);
+    cell.appendChild(fireImg);[cite: 1]
 }
 
 function renderSetupBoard() {
@@ -387,7 +388,7 @@ function renderSetupBoard() {
     const placedCount = game.playerShips.filter(s => s.cells.length).length;
     ui.placedCount.textContent = `${placedCount} / ${game.playerShips.length} posizionate`;
     ui.start.disabled = game.playerShips.some(s => !s.cells.length);
-    renderFleetList();
+    renderFleetList();[cite: 1]
 }
 
 function clearPreview() {
@@ -395,7 +396,7 @@ function clearPreview() {
         const cell = getBoardCell(ui.setupBoard, r, c);
         if (cell) cell.classList.remove("preview", "invalid");
     });
-    game.previewCells = [];
+    game.previewCells = [];[cite: 1]
 }
 
 function showPreview(r, c) {
@@ -415,7 +416,7 @@ function showPreview(r, c) {
             if (!valid) cell.classList.add("invalid");
         }
         game.previewCells.push({ r: rr, c: cc });
-    });
+    });[cite: 1]
 }
 
 function handleSetupCell(r, c) {
@@ -441,7 +442,7 @@ function handleSetupCell(r, c) {
 
     playSound("click");
     game.selectedShipId = game.playerShips.find(s => !s.cells.length)?.id || null;
-    renderSetupBoard();
+    renderSetupBoard();[cite: 1]
 }
 
 function autoPlacePlayer() {
@@ -449,10 +450,10 @@ function autoPlacePlayer() {
     playSound("click");
     if (!randomPlacement(game.playerShips)) return;
     game.selectedShipId = null;
-    renderSetupBoard();
+    renderSetupBoard();[cite: 1]
 }
 
-// --- LOGICA MULTIPLAYER FIREBASE (MODULAR) ---
+// --- LOGICA MULTIPLAYER FIREBASE ---
 
 ui.joinRoomBtn.addEventListener("click", () => {
     const code = ui.roomCodeInput.value.trim().toUpperCase();
@@ -500,6 +501,7 @@ ui.start.addEventListener("click", () => {
         id: s.id,
         length: s.length,
         label: s.label,
+        image: s.image,
         cells: s.cells
     }));
 
@@ -513,7 +515,7 @@ ui.start.addEventListener("click", () => {
     ui.battlePanel.classList.remove("hidden");
     setStatus("In attesa dell'avversario", "Hai schierato la flotta. Aspettando che l'altro giocatore sia pronto...");
     playSound("inizio");
-    renderBattleBoards();
+    renderBattleBoards(false);
 });
 
 function initFirebaseListeners(roomRefPath) {
@@ -523,13 +525,19 @@ function initFirebaseListeners(roomRefPath) {
 
         const p1 = data.p1;
         const p2 = data.p2;
+        const opponentRole = game.playerRole === "p1" ? "p2" : "p1";
+        const opponentData = data[opponentRole];
 
-        if (p1 && p2 && p1.ready && p2.ready && game.phase === "waiting_opponent") {
-            game.phase = "battle";
+        if (opponentData && opponentData.ships) {
+            game.enemyShips = opponentData.ships;
+        }
+
+        if (p1 && p2 && p1.ready && p2.ready) {
+            if (game.phase === "waiting_opponent") {
+                game.phase = "battle";
+            }
             if (!data.turn) {
-                if (game.playerRole === "p1") {
-                    set(ref(db, `${roomRefPath}/turn`), "p1");
-                }
+                set(ref(db, `${roomRefPath}/turn`), "p1");
             }
         }
 
@@ -544,23 +552,30 @@ function updateBattleStateFromFirebase(data) {
     const myData = data[game.playerRole] || {};
     const opponentData = data[opponentRole] || {};
 
-    if (opponentData.lastShot) {
-        const shotKey = key(opponentData.lastShot.r, opponentData.lastShot.c);
-        game.opponentShots.add(shotKey);
+    if (opponentData.shotsFired) {
+        game.opponentShots = new Set(opponentData.shotsFired);
     }
 
     if (myData.shotsFired) {
         game.myShots = new Set(myData.shotsFired);
     }
 
-    renderBattleBoards();
+    const isMyTurn = data.turn === game.playerRole && game.phase === "battle";
+    renderBattleBoards(isMyTurn);
 
-    const currentTurn = data.turn;
-    if (currentTurn === game.playerRole) {
+    if (game.phase === "waiting_opponent") {
+        ui.turn.textContent = "In attesa";
+        setStatus("In attesa dell'avversario", "In attesa che l'altro giocatore schieri la flotta...");
+        return;
+    }
+
+    if (isMyTurn) {
         ui.turn.textContent = "Tuo turno";
+        ui.enemyChip.textContent = "Il tuo turno: Spara!";
         setStatus("È il tuo turno!", "Clicca su una casella del settore avversario per sparare.", "cyan");
     } else {
         ui.turn.textContent = "Avversario";
+        ui.enemyChip.textContent = "Turno avversario";
         setStatus("Turno avversario", "L'avversario sta mirando...", "gold");
     }
 
@@ -585,7 +600,7 @@ function handlePlayerShot(r, c) {
 
         let hitShip = null;
         for (const ship of opponentShips) {
-            if (ship.cells.some(([sr, sc]) => sr === r && sc === c)) {
+            if (ship.cells && ship.cells.some(([sr, sc]) => sr === r && sc === c)) {
                 hitShip = ship;
                 break;
             }
@@ -595,10 +610,9 @@ function handlePlayerShot(r, c) {
         let nextTurn = game.playerRole;
 
         if (hitShip) {
-            playSound("hit");
+            const isSunk = hitShip.cells.every(([sr, sc]) => game.myShots.has(key(sr, sc)));
+            playSound(isSunk ? "sinking" : "hit");
             game.playerHitCount++;
-            const targetCell = getBoardCell(ui.enemyBoard, r, c);
-            if (targetCell) addFireOverlay(targetCell);
             setStatus("Colpo a segno!", "Impatto confermato! Tiri ancora.", "cyan");
         } else {
             playSound("water");
@@ -632,13 +646,13 @@ function checkWinConditions(data) {
 
     let enemySunkCount = 0;
     opponentShips.forEach(ship => {
-        const allHit = ship.cells.every(([r, c]) => myShotsSet.has(key(r, c)));
+        const allHit = ship.cells && ship.cells.every(([r, c]) => myShotsSet.has(key(r, c)));
         if (allHit && ship.cells.length > 0) enemySunkCount++;
     });
 
     let mySunkCount = 0;
     myShips.forEach(ship => {
-        const allHit = ship.cells.every(([r, c]) => opponentShotsSet.has(key(r, c)));
+        const allHit = ship.cells && ship.cells.every(([r, c]) => opponentShotsSet.has(key(r, c)));
         if (allHit) mySunkCount++;
     });
 
@@ -663,20 +677,25 @@ function finishGame(playerWon) {
     setTimeout(() => ui.resultDialog.showModal(), 1000);
 }
 
-function renderBattleBoards() {
+function renderBattleBoards(isMyTurn) {
+    // 1. Plancia del giocatore (difesa)
     createBoard(ui.playerBoard, "player");
     const pBoard = ui.playerBoard.querySelector(".board");
     game.playerShips.forEach(ship => {
         if (ship.cells.length) addShipOverlay(pBoard, ship);
     });
+
     for (let r = 0; r < SIZE; r++) {
         for (let c = 0; c < SIZE; c++) {
             const cell = getBoardCell(ui.playerBoard, r, c);
             const k = key(r, c);
             const ship = shipAt(game.playerShips, r, c);
+            cell.disabled = true;
+
             if (game.opponentShots.has(k)) {
                 if (ship) {
-                    cell.classList.add("hit");
+                    const isSunk = ship.cells.every(([sr, sc]) => game.opponentShots.has(key(sr, sc)));
+                    cell.classList.add(isSunk ? "sunk" : "hit");
                     addFireOverlay(cell);
                 } else {
                     cell.classList.add("miss");
@@ -685,16 +704,38 @@ function renderBattleBoards() {
         }
     }
 
+    // 2. Plancia avversaria (attacco)
     createBoard(ui.enemyBoard, "enemy");
+    const eBoard = ui.enemyBoard.querySelector(".board");
+
+    // Mostra le navi avversarie solo se affondate completamente
+    (game.enemyShips || []).forEach(ship => {
+        if (ship.cells && ship.cells.length > 0) {
+            const isSunk = ship.cells.every(([sr, sc]) => game.myShots.has(key(sr, sc)));
+            if (isSunk) {
+                addShipOverlay(eBoard, ship);
+            }
+        }
+    });
+
     for (let r = 0; r < SIZE; r++) {
         for (let c = 0; c < SIZE; c++) {
             const cell = getBoardCell(ui.enemyBoard, r, c);
             const k = key(r, c);
             const isShot = game.myShots.has(k);
-            cell.disabled = game.phase !== "battle" || isShot;
+            const enemyShip = (game.enemyShips || []).find(s => s.cells && s.cells.some(([sr, sc]) => sr === r && sc === c));
+
+            // Abilita la cella solo se è il tuo turno, la partita è in corso e non è già stata colpita
+            cell.disabled = !isMyTurn || game.phase !== "battle" || isShot;
 
             if (isShot) {
-                cell.classList.add("miss");
+                if (enemyShip) {
+                    const isSunk = enemyShip.cells.every(([sr, sc]) => game.myShots.has(key(sr, sc)));
+                    cell.classList.add(isSunk ? "sunk" : "hit");
+                    addFireOverlay(cell);
+                } else {
+                    cell.classList.add("miss");
+                }
             }
         }
     }
@@ -707,7 +748,7 @@ function renderBattleBoards() {
 ui.rotate.addEventListener("click", () => {
     game.orientation = game.orientation === "H" ? "V" : "H";
     ui.rotate.textContent = `↻ Ruota: ${game.orientation === "H" ? "orizzontale" : "verticale"}`;
-    playSound("click");
+    playSound("click");[cite: 1]
 });
 
 ui.autoPlace.addEventListener("click", autoPlacePlayer);
@@ -715,7 +756,7 @@ ui.autoPlace.addEventListener("click", autoPlacePlayer);
 ui.soundToggle.addEventListener("click", () => {
     game.soundEnabled = !game.soundEnabled;
     ui.soundToggle.textContent = game.soundEnabled ? "♫ Audio ON" : "♫ Audio OFF";
-    if (game.soundEnabled) playSound("click");
+    if (game.soundEnabled) playSound("click");[cite: 1]
 });
 
 ui.roomMenuBtn.addEventListener("click", () => {
@@ -732,6 +773,6 @@ document.addEventListener("keydown", (e) => {
         e.preventDefault();
         game.orientation = game.orientation === "H" ? "V" : "H";
         ui.rotate.textContent = `↻ Ruota: ${game.orientation === "H" ? "orizzontale" : "verticale"}`;
-        playSound("click");
+        playSound("click");[cite: 1]
     }
 });
