@@ -2,7 +2,15 @@
 "use strict";
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getDatabase, ref, set, onValue, get, update } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+import {
+    getDatabase,
+    ref,
+    set,
+    onValue,
+    get,
+    update,
+    runTransaction
+} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
 // --- TUA CONFIGURAZIONE FIREBASE ---
 const firebaseConfig = {
@@ -466,33 +474,86 @@ ui.joinRoomBtn.addEventListener("click", () => {
     connectToRoom(code);
 });
 
-function connectToRoom(code) {
+async function connectToRoom(code) {
+
     const roomRefPath = `battaglia_rooms/${code}`;
+
     ui.roomStatusBox.textContent = "Connessione alla stanza in corso...";
 
-    get(ref(db, roomRefPath)).then(snapshot => {
-        const roomData = snapshot.val() || {};
+    try {
 
-        if (!roomData.p1) {
+        // Prova ad assegnare il posto al giocatore 1
+        const p1Result = await runTransaction(
+            ref(db, `${roomRefPath}/p1`),
+            current => {
+                if (current === null) {
+                    return { ready: false };
+                }
+                return;
+            }
+        );
+
+        if (p1Result.committed) {
+
             game.playerRole = "p1";
-            set(ref(db, `${roomRefPath}/p1`), { ready: false });
-        } else if (!roomData.p2) {
-            game.playerRole = "p2";
-            set(ref(db, `${roomRefPath}/p2`), { ready: false });
+
         } else {
-            game.playerRole = "p2";
+
+            // Se P1 è occupato, prova con P2
+            const p2Result = await runTransaction(
+                ref(db, `${roomRefPath}/p2`),
+                current => {
+                    if (current === null) {
+                        return { ready: false };
+                    }
+                    return;
+                }
+            );
+
+            if (p2Result.committed) {
+
+                game.playerRole = "p2";
+
+            } else {
+
+                ui.roomStatusBox.textContent =
+                    "Stanza piena! Entrambi i giocatori sono già presenti.";
+
+                return;
+            }
         }
+
+        game.roomCode = code;
 
         ui.roomPanel.classList.add("hidden");
         ui.setupPanel.classList.remove("hidden");
+
         game.phase = "setup";
+
         game.playerShips = makeFleet();
+
         game.selectedShipId = game.playerShips[0].id;
+
         renderSetupBoard();
 
-        setStatus("Schiera la tua flotta", `Connesso come Giocatore ${game.playerRole === "p1" ? "1" : "2"}.`);
+        setStatus(
+            "Schiera la tua flotta",
+            `Connesso come Giocatore ${game.playerRole === "p1" ? "1" : "2"}.`
+        );
+
+        ui.roomStatusBox.textContent =
+            `Connesso correttamente come ${game.playerRole.toUpperCase()}.`;
+
         initFirebaseListeners(roomRefPath);
-    });
+
+    } catch (error) {
+
+        console.error("Errore connessione Firebase:", error);
+
+        ui.roomStatusBox.textContent =
+            "Errore durante la connessione alla stanza.";
+
+    }
 }
 
 ui.start.addEventListener("click", () => {
