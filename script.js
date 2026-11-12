@@ -29,9 +29,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
-
 const SIZE = 10;
 const LETTERS = "ABCDEFGHIJ".split("");
 
