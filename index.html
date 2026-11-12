@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#082d43">
+    <title>Battaglia Navale Multiplayer</title>
+    <link rel="icon" type="image/png" href="assets/icons/icona.gif">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <main class="game-shell">
+        <header class="topbar">
+            <div>
+                <h1>Battaglia <span>Navale</span></h1>
+            </div>
+            <div class="top-actions">
+                <button id="sound-toggle" class="button button-quiet" type="button" aria-pressed="true">♫ Audio ON</button>
+                <button id="room-menu-btn" class="button button-quiet" type="button">Stanza</button>
+            </div>
+        </header>
+
+        <!-- SCHERMATA GESTIONE STANZA FIREBASE -->
+        <section id="room-panel" class="setup-panel">
+            <div class="setup-heading">
+                <div>
+                    <p class="eyebrow">MULTIPLAYER ONLINE</p>
+                    <h2>Connessione Stanza</h2>
+                    <p>Inserisci un codice stanza (es. xy01) e condividilo con il tuo avversario per iniziare la sfida.</p>
+                </div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 14px; max-width: 400px; margin: 10px 0 20px;">
+                <label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted);">
+                    Codice Stanza
+                    <input type="text" id="room-code-input" placeholder="es. xy01" style="padding: 10px; border-radius: 8px; background: #0b3449; border: 1px solid var(--line); color: var(--text); font-size: 16px; font-weight: bold; text-transform: uppercase;">
+                </label>
+                <div style="display: flex; gap: 10px;">
+                    <button id="join-room-btn" class="button button-primary" type="button" style="flex: 1;">Entra / Crea Stanza</button>
+                </div>
+            </div>
+            <div id="room-status-box" style="color: var(--cyan); font-size: 13px; font-weight: bold;"></div>
+        </section>
+
+        <!-- SCHERMATA POSIZIONAMENTO (SETUP) -->
+        <section id="setup-panel" class="setup-panel hidden">
+            <div class="setup-heading">
+                <div>
+                    <p class="eyebrow">FASE 01</p>
+                    <h2>Schiera la tua flotta</h2>
+                    <p>Le navi devono avere almeno una casella libera fra loro, anche in diagonale. Premi Spazio per ruotare.</p>
+                </div>
+                <div class="setup-actions">
+                    <button id="rotate-ship" class="button button-quiet" type="button">↻ Ruota: orizzontale</button>
+                    <button id="auto-place" class="button button-quiet" type="button">Posizionamento automatico</button>
+                    <button id="start-game" class="button button-primary" type="button" disabled>Pronto per la battaglia →</button>
+                </div>
+            </div>
+            <div class="setup-content">
+                <div class="fleet-list" id="fleet-list" aria-label="Navi da posizionare"></div>
+                <div class="board-card setup-board-card">
+                    <div class="board-title">
+                        <div><span class="board-kicker">IL TUO SETTORE</span><h3>La mia flotta</h3></div>
+                        <span class="board-chip" id="placed-count">0 / 7 posizionate</span>
+                    </div>
+                    <div id="setup-board" class="board-wrap"></div>
+                    <p class="board-hint">Seleziona una nave nella lista, poi clicca la casella iniziale. Clicca una nave già posizionata per rimuoverla.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- SCHERMATA BATTAGLIA MULTIPLAYER -->
+        <section id="battle-panel" class="battle-panel hidden">
+            <div class="boards">
+                <article class="board-card">
+                    <div class="board-title">
+                        <div><span class="board-kicker">SETTORE ALFA</span><h3>La mia flotta</h3></div>
+                        <span class="board-chip" id="player-board-chip">In difesa</span>
+                    </div>
+                    <div id="player-board" class="board-wrap"></div>
+                </article>
+                <article class="board-card enemy-card">
+                    <div class="board-title">
+                        <div><span class="board-kicker">SETTORE BRAVO</span><h3>Flotta avversaria</h3></div>
+                        <span class="board-chip" id="enemy-board-chip">Bersagli nascosti</span>
+                    </div>
+                    <div id="enemy-board" class="board-wrap"></div>
+                </article>
+            </div>
+            <section class="status-panel" aria-live="polite">
+                <div class="status-light" id="status-light"></div>
+                <div class="status-copy">
+                    <strong id="status-title">In attesa</strong>
+                    <span id="status-message">Sincronizzazione in corso...</span>
+                </div>
+                <div class="status-stat"><span>Navi tue</span><strong id="player-ships-left">7</strong></div>
+                <div class="status-stat"><span>Navi avversarie</span><strong id="enemy-ships-left">7</strong></div>
+            </section>
+
+            <section class="stats-grid">
+                <div class="mini-stat"><span>Colpi sparati</span><strong id="shots-count">0</strong></div>
+                <div class="mini-stat"><span>Colpi a segno</span><strong id="hits-count">0</strong></div>
+                <div class="mini-stat"><span>Precisione</span><strong id="accuracy-count">0%</strong></div>
+                <div class="mini-stat"><span>Turno</span><strong id="turn-count">—</strong></div>
+            </section>
+        </section>
+
+        <footer class="footer">
+            <span>Operazione Mare Aperto - Multiplayer</span>
+            <button id="rules-toggle" class="text-button" type="button">Regole del gioco</button>
+        </footer>
+    </main>
+
+    <dialog id="rules-dialog" class="modal">
+        <form method="dialog">
+            <button class="modal-close" aria-label="Chiudi">×</button>
+            <p class="eyebrow">MANUALE OPERATIVO</p>
+            <h2>Regole del gioco</h2>
+            <ul>
+                <li>Ogni flotta contiene 7 navi e occupa 17 caselle.</li>
+                <li>Le navi possono essere orizzontali o verticali, anche sui bordi.</li>
+                <li>Tra due navi deve esserci almeno una casella libera, anche diagonalmente.</li>
+                <li>A turno, clicca sul tabellone avversario per sparare. Chi colpisce guadagna un tiro extra.</li>
+                <li>Vince chi affonda per primo tutte le navi della flotta avversaria.</li>
+            </ul>
+            <button class="button button-primary" type="submit">Ho capito</button>
+        </form>
+    </dialog>
+
+    <dialog id="result-dialog" class="modal result-modal">
+        <form method="dialog">
+            <p class="eyebrow">MISSIONE CONCLUSA</p>
+            <h2 id="result-title">Vittoria!</h2>
+            <p id="result-message"></p>
+            <div class="result-actions">
+                <button class="button button-primary" id="play-again" type="button">Torna alla Home</button>
+                <button class="button button-quiet" type="submit">Chiudi</button>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- Script principale con modulo JavaScript -->
+    <script type="module" src="script.js"></script>
+</body>
+</html>
