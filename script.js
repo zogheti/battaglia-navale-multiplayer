@@ -2,6 +2,7 @@
 "use strict";
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+
 import {
     getDatabase,
     ref,
@@ -9,10 +10,11 @@ import {
     onValue,
     get,
     update,
-    runTransaction
+    runTransaction,
+    onDisconnect
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
-// --- TUA CONFIGURAZIONE FIREBASE ---
+// --- CONFIGURAZIONE FIREBASE ---
 const firebaseConfig = {
     apiKey: "AIzaSyBkc2s0vZjby7EnGd_9gsrd8eySFFb-s50",
     authDomain: "battaglia-navale-multiplayer.firebaseapp.com",
@@ -22,6 +24,10 @@ const firebaseConfig = {
     messagingSenderId: "788659808148",
     appId: "1:788659808148:web:9d23a20f776eb1d6e99181"
 };
+
+// --- INIZIALIZZAZIONE FIREBASE ---
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
 
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
@@ -475,6 +481,7 @@ ui.joinRoomBtn.addEventListener("click", () => {
     connectToRoom(code);
 });
 
+
 async function connectToRoom(code) {
 
     const roomRefPath = `battaglia_rooms/${code}`;
@@ -483,13 +490,35 @@ async function connectToRoom(code) {
 
     try {
 
+        // Elimina la stanza se entrambi i giocatori risultano disconnessi
+        await runTransaction(ref(db, roomRefPath), current => {
+
+            if (current === null) {
+                return null;
+            }
+
+            const p1Offline = !current.p1 || current.p1.connected !== true;
+            const p2Offline = !current.p2 || current.p2.connected !== true;
+
+            if (p1Offline && p2Offline) {
+                return null;
+            }
+
+            return current;
+        });
+
         // Prova ad assegnare il posto al giocatore 1
         const p1Result = await runTransaction(
             ref(db, `${roomRefPath}/p1`),
             current => {
-                if (current === null) {
-                    return { ready: false };
+
+                if (current === null || current.connected !== true) {
+                    return {
+                        ready: false,
+                        connected: true
+                    };
                 }
+
                 return;
             }
         );
@@ -504,9 +533,14 @@ async function connectToRoom(code) {
             const p2Result = await runTransaction(
                 ref(db, `${roomRefPath}/p2`),
                 current => {
-                    if (current === null) {
-                        return { ready: false };
+
+                    if (current === null || current.connected !== true) {
+                        return {
+                            ready: false,
+                            connected: true
+                        };
                     }
+
                     return;
                 }
             );
@@ -525,6 +559,11 @@ async function connectToRoom(code) {
         }
 
         game.roomCode = code;
+
+        // Registra la disconnessione automatica del giocatore
+        await onDisconnect(
+            ref(db, `${roomRefPath}/${game.playerRole}/connected`)
+        ).set(false);
 
         ui.roomPanel.classList.add("hidden");
         ui.setupPanel.classList.remove("hidden");
@@ -556,6 +595,7 @@ async function connectToRoom(code) {
 
     }
 }
+
 
 ui.start.addEventListener("click", () => {
     if (game.playerShips.some(s => !s.cells.length)) return;
