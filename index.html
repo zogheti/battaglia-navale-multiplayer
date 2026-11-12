@@ -7,91 +7,6 @@
     <title>Battaglia Navale Multiplayer</title>
     <link rel="icon" type="image/png" href="assets/icons/icona.gif">
     <link rel="stylesheet" href="style.css">
-    <style>
-        .connection-banner {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            flex-wrap: wrap;
-            gap: 10px;
-            padding: 8px 14px;
-            margin-bottom: 12px;
-            border-radius: 10px;
-            background: rgba(16, 185, 129, 0.14);
-            border: 1px solid rgba(16, 185, 129, 0.45);
-            color: #d1fae5;
-            font-size: 13px;
-            font-weight: 600;
-        }
-
-        .conn-left {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .conn-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: #10b981;
-            box-shadow: 0 0 10px #10b981;
-            animation: pulse-green 1.8s infinite;
-        }
-
-        @keyframes pulse-green {
-            0%, 100% {
-                opacity: 1;
-                transform: scale(1);
-            }
-
-            50% {
-                opacity: 0.5;
-                transform: scale(1.25);
-            }
-        }
-
-        .conn-players {
-            background: rgba(6, 28, 43, 0.75);
-            padding: 4px 10px;
-            border-radius: 6px;
-            border: 1px solid rgba(86, 215, 233, 0.3);
-            color: var(--cyan-soft);
-            font-size: 12px;
-        }
-
-        .lobby-form {
-            display: flex;
-            flex-direction: column;
-            gap: 14px;
-            max-width: 400px;
-            margin: 10px 0 16px;
-        }
-
-        .lobby-label {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-            font-size: 13px;
-            color: var(--muted);
-            font-weight: 600;
-        }
-
-        .lobby-input {
-            padding: 11px 12px;
-            border-radius: 8px;
-            background: #0b3449;
-            border: 1px solid var(--line);
-            color: var(--text);
-            font-size: 15px;
-            font-weight: 700;
-        }
-
-            .lobby-input:focus {
-                outline: 2px solid var(--cyan);
-                border-color: transparent;
-            }
-    </style>
 </head>
 <body>
     <main class="game-shell">
@@ -101,38 +16,27 @@
             </div>
             <div class="top-actions">
                 <button id="sound-toggle" class="button button-quiet" type="button" aria-pressed="true">♫ Audio ON</button>
-                <button id="room-menu-btn" class="button button-quiet hidden" type="button">Esci dalla stanza</button>
+                <button id="room-menu-btn" class="button button-quiet" type="button">Stanza</button>
             </div>
         </header>
 
-        <!-- BANNER VERDE DI CONNESSIONE ATTIVA -->
-        <div id="connection-banner" class="connection-banner hidden" aria-live="polite">
-            <div class="conn-left">
-                <span class="conn-dot"></span>
-                <span id="conn-room-label">CONNESSO • STANZA: —</span>
-            </div>
-            <div class="conn-players" id="conn-players-label">In attesa dell'avversario...</div>
-        </div>
-
-        <!-- SCHERMATA GESTIONE STANZA -->
+        <!-- SCHERMATA GESTIONE STANZA FIREBASE -->
         <section id="room-panel" class="setup-panel">
             <div class="setup-heading">
                 <div>
                     <p class="eyebrow">MULTIPLAYER ONLINE</p>
                     <h2>Connessione Stanza</h2>
-                    <p>Inserisci il tuo nome e un codice stanza (es. XY01) da condividere con il tuo avversario.</p>
+                    <p>Inserisci un codice stanza (es. xy01) e condividilo con il tuo avversario per iniziare la sfida.</p>
                 </div>
             </div>
-            <div class="lobby-form">
-                <label class="lobby-label">
-                    Il tuo Nome
-                    <input type="text" id="player-name-input" class="lobby-input" placeholder="es. Capitano Marco" maxlength="18">
-                </label>
-                <label class="lobby-label">
+            <div style="display: flex; flex-direction: column; gap: 14px; max-width: 400px; margin: 10px 0 20px;">
+                <label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted);">
                     Codice Stanza
-                    <input type="text" id="room-code-input" class="lobby-input" placeholder="es. XY01" maxlength="12" style="text-transform: uppercase;">
+                    <input type="text" id="room-code-input" placeholder="es. xy01" style="padding: 10px; border-radius: 8px; background: #0b3449; border: 1px solid var(--line); color: var(--text); font-size: 16px; font-weight: bold; text-transform: uppercase;">
                 </label>
-                <button id="join-room-btn" class="button button-primary" type="button">Entra / Crea Stanza</button>
+                <div style="display: flex; gap: 10px;">
+                    <button id="join-room-btn" class="button button-primary" type="button" style="flex: 1;">Entra / Crea Stanza</button>
+                </div>
             </div>
             <div id="room-status-box" style="color: var(--cyan); font-size: 13px; font-weight: bold;"></div>
         </section>
@@ -155,7 +59,7 @@
                 <div class="fleet-list" id="fleet-list" aria-label="Navi da posizionare"></div>
                 <div class="board-card setup-board-card">
                     <div class="board-title">
-                        <div><span class="board-kicker">IL TUO SETTORE</span><h3 id="setup-player-title">La mia flotta</h3></div>
+                        <div><span class="board-kicker">IL TUO SETTORE</span><h3>La mia flotta</h3></div>
                         <span class="board-chip" id="placed-count">0 / 7 posizionate</span>
                     </div>
                     <div id="setup-board" class="board-wrap"></div>
@@ -169,14 +73,14 @@
             <div class="boards">
                 <article class="board-card">
                     <div class="board-title">
-                        <div><span class="board-kicker">SETTORE ALFA</span><h3 id="my-battle-title">La mia flotta</h3></div>
+                        <div><span class="board-kicker">SETTORE ALFA</span><h3>La mia flotta</h3></div>
                         <span class="board-chip" id="player-board-chip">In difesa</span>
                     </div>
                     <div id="player-board" class="board-wrap"></div>
                 </article>
                 <article class="board-card enemy-card">
                     <div class="board-title">
-                        <div><span class="board-kicker">SETTORE BRAVO</span><h3 id="enemy-battle-title">Flotta avversaria</h3></div>
+                        <div><span class="board-kicker">SETTORE BRAVO</span><h3>Flotta avversaria</h3></div>
                         <span class="board-chip" id="enemy-board-chip">Bersagli nascosti</span>
                     </div>
                     <div id="enemy-board" class="board-wrap"></div>
@@ -188,15 +92,15 @@
                     <strong id="status-title">In attesa</strong>
                     <span id="status-message">Sincronizzazione in corso...</span>
                 </div>
-                <div class="status-stat"><span id="my-ships-stat-label">Navi tue</span><strong id="player-ships-left">7</strong></div>
-                <div class="status-stat"><span id="enemy-ships-stat-label">Navi nemiche</span><strong id="enemy-ships-left">7</strong></div>
+                <div class="status-stat"><span>Navi tue</span><strong id="player-ships-left">7</strong></div>
+                <div class="status-stat"><span>Navi avversarie</span><strong id="enemy-ships-left">7</strong></div>
             </section>
 
             <section class="stats-grid">
                 <div class="mini-stat"><span>Colpi sparati</span><strong id="shots-count">0</strong></div>
                 <div class="mini-stat"><span>Colpi a segno</span><strong id="hits-count">0</strong></div>
                 <div class="mini-stat"><span>Precisione</span><strong id="accuracy-count">0%</strong></div>
-                <div class="mini-stat"><span>Turno attuale</span><strong id="turn-count">—</strong></div>
+                <div class="mini-stat"><span>Turno</span><strong id="turn-count">—</strong></div>
             </section>
         </section>
 
@@ -212,11 +116,11 @@
             <p class="eyebrow">MANUALE OPERATIVO</p>
             <h2>Regole del gioco</h2>
             <ul>
-                <li>Ogni flotta contiene 7 navi[cite: 1].</li>
-                <li>Le navi possono essere orizzontali o verticali, anche sui bordi[cite: 1, 3].</li>
-                <li>Tra due navi deve esserci almeno una casella libera, anche diagonalmente[cite: 1, 3].</li>
-                <li>A turno, clicca sul tabellone avversario per sparare. Chi colpisce guadagna un tiro extra[cite: 1].</li>
-                <li>Vince chi affonda per primo tutte le navi della flotta avversaria[cite: 3].</li>
+                <li>Ogni flotta contiene 7 navi e occupa 17 caselle.</li>
+                <li>Le navi possono essere orizzontali o verticali, anche sui bordi.</li>
+                <li>Tra due navi deve esserci almeno una casella libera, anche diagonalmente.</li>
+                <li>A turno, clicca sul tabellone avversario per sparare. Chi colpisce guadagna un tiro extra.</li>
+                <li>Vince chi affonda per primo tutte le navi della flotta avversaria.</li>
             </ul>
             <button class="button button-primary" type="submit">Ho capito</button>
         </form>
@@ -228,31 +132,13 @@
             <h2 id="result-title">Vittoria!</h2>
             <p id="result-message"></p>
             <div class="result-actions">
-                <button class="button button-primary" id="play-again" type="button">Nuova Stanza</button>
+                <button class="button button-primary" id="play-again" type="button">Torna alla Home</button>
                 <button class="button button-quiet" type="submit">Chiudi</button>
             </div>
         </form>
     </dialog>
 
-    <!-- Firebase SDK Compat (Versione stabile identica al test di prova) -->
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
-
-    <!-- Inizializzazione Firebase con i tuoi dati -->
-    <script>
-        const firebaseConfig = {
-            apiKey: "AIzaSyBkc2s0vZjby7EnGd_9gsrd8eySFFb-s50",
-            authDomain: "battaglia-navale-multiplayer.firebaseapp.com",
-            databaseURL: "https://battaglia-navale-multiplayer-default-rtdb.firebaseio.com",
-            projectId: "battaglia-navale-multiplayer",
-            storageBucket: "battaglia-navale-multiplayer.firebasestorage.app",
-            messagingSenderId: "788659808148",
-            appId: "1:788659808148:web:9d23a20f776eb1d6e99181"
-        };
-        firebase.initializeApp(firebaseConfig);
-    </script>
-
-    <!-- Il tuo script di gioco -->
-    <script src="script.js"></script>
+    <!-- Script principale con modulo JavaScript -->
+    <script type="module" src="script.js"></script>
 </body>
 </html>
