@@ -1,12 +1,7 @@
-/* Battaglia Navale - Multiplayer Firebase (Compat SDK) */
+/* Battaglia Navale - Multiplayer Firebase (Compat SDK con Transazioni) */
 "use strict";
 
-// Import the functions you need from the SDKs you need
-import { initializeApp } from "firebase/app";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
-
-// Your web app's Firebase configuration
+// --- TUA CONFIGURAZIONE FIREBASE ---
 const firebaseConfig = {
     apiKey: "AIzaSyBkc2s0vZjby7EnGd_9gsrd8eySFFb-s50",
     authDomain: "battaglia-navale-multiplayer.firebaseapp.com",
@@ -17,9 +12,9 @@ const firebaseConfig = {
     appId: "1:788659808148:web:9d23a20f776eb1d6e99181"
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);// JavaScript source code
-
+// Inizializzazione Firebase Compat
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
 
 const SIZE = 10;
 const LETTERS = "ABCDEFGHIJ".split("");
@@ -467,7 +462,7 @@ function autoPlacePlayer() {
     renderSetupBoard();[cite: 1]
 }
 
-// --- LOGICA MULTIPLAYER FIREBASE (Compat) ---
+// --- LOGICA MULTIPLAYER FIREBASE (TRANSAZIONE SICURA) ---
 
 ui.joinRoomBtn.addEventListener("click", () => {
     const nameInput = ui.playerNameInput.value.trim();
@@ -494,57 +489,64 @@ function connectToRoom(code) {
     ui.joinRoomBtn.disabled = true;
     ui.roomStatusBox.textContent = "Connessione alla stanza in corso...";
 
-    roomRef.once("value", snapshot => {
-        const roomData = snapshot.val() || {};
+    // Transazione atomica per evitare sovrascritture o race conditions tra i due telefoni
+    roomRef.transaction(currentData => {
+        const room = currentData || { p1: null, p2: null, turn: null };
 
-        if (!roomData.p1) {
+        // Riconnessione se lo stesso utente è già registrato come p1
+        if (room.p1 && room.p1.name === game.playerName) {
             game.playerRole = "p1";
-            roomRef.child("p1").set({
-                name: game.playerName,
-                ready: false
-            });
-        } else if (!roomData.p2) {
+            return room;
+        }
+        // Riconnessione se lo stesso utente è già registrato come p2
+        if (room.p2 && room.p2.name === game.playerName) {
             game.playerRole = "p2";
-            roomRef.child("p2").set({
-                name: game.playerName,
-                ready: false
-            });
-        } else {
-            if (roomData.p1.name === game.playerName) {
-                game.playerRole = "p1";
-            } else if (roomData.p2.name === game.playerName) {
-                game.playerRole = "p2";
-            } else {
-                alert("Questa stanza è già piena (2 giocatori collegati). Usa un altro codice stanza!");
-                ui.joinRoomBtn.disabled = false;
-                ui.roomStatusBox.textContent = "";
-                return;
-            }
+            return room;
         }
 
-        playSound("click");
+        // Assegnazione slot liberi
+        if (!room.p1) {
+            game.playerRole = "p1";
+            room.p1 = { name: game.playerName, ready: false };
+            return room;
+        } else if (!room.p2) {
+            game.playerRole = "p2";
+            room.p2 = { name: game.playerName, ready: false };
+            return room;
+        } else {
+            // Stanza piena con altri giocatori
+            return;
+        }
+    }, (error, committed, snapshot) => {
+        if (error) {
+            console.error("Errore di connessione:", error);
+            ui.joinRoomBtn.disabled = false;
+            ui.roomStatusBox.textContent = "Errore di connessione a Firebase.";
+        } else if (!committed) {
+            alert("Questa stanza è già piena con 2 giocatori diversi! Scegli un altro codice.");
+            ui.joinRoomBtn.disabled = false;
+            ui.roomStatusBox.textContent = "";
+        } else {
+            playSound("click");
 
-        // Mostra il banner verde
-        ui.connectionBanner.classList.remove("hidden");
-        ui.connRoomLabel.textContent = `CONNESSO • STANZA: ${code}`;
-        ui.roomMenuBtn.classList.remove("hidden");
+            // Attiva il banner verde di connessione
+            ui.connectionBanner.classList.remove("hidden");
+            ui.connRoomLabel.textContent = `CONNESSO • STANZA: ${code}`;
+            ui.roomMenuBtn.classList.remove("hidden");
 
-        ui.setupPlayerTitle.textContent = `Flotta di ${game.playerName}`;
-        ui.myBattleTitle.textContent = `Flotta di ${game.playerName}`;
-        ui.myShipsStatLabel.textContent = `Navi ${game.playerName}`;
+            ui.setupPlayerTitle.textContent = `Flotta di ${game.playerName}`;
+            ui.myBattleTitle.textContent = `Flotta di ${game.playerName}`;
+            ui.myShipsStatLabel.textContent = `Navi ${game.playerName}`;
 
-        ui.roomPanel.classList.add("hidden");
-        ui.setupPanel.classList.remove("hidden");
-        game.phase = "setup";
-        game.playerShips = makeFleet();
-        game.selectedShipId = game.playerShips[0].id;
-        renderSetupBoard();
+            ui.roomPanel.classList.add("hidden");
+            ui.setupPanel.classList.remove("hidden");
+            game.phase = "setup";
+            game.playerShips = makeFleet();
+            game.selectedShipId = game.playerShips[0].id;
+            renderSetupBoard();
 
-        initFirebaseListeners(roomRef);
-    }, err => {
-        console.error(err);
-        ui.joinRoomBtn.disabled = false;
-        ui.roomStatusBox.textContent = "Errore di connessione a Firebase. Verifica le regole del database.";
+            initFirebaseListeners(roomRef);
+        }
     });
 }
 
