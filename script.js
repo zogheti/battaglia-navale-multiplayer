@@ -1,10 +1,7 @@
-/* Battaglia Navale - Multiplayer Firebase (Modular SDK v10) */
+/* Battaglia Navale - Multiplayer Firebase (Compat SDK) */
 "use strict";
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getDatabase, ref, set, onValue, get, update, remove } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
-
-// --- CONFIGURAZIONE FIREBASE ---
+// --- TUA CONFIGURAZIONE FIREBASE ---
 const firebaseConfig = {
     apiKey: "AIzaSyBkc2s0vZjby7EnGd_9gsrd8eySFFb-s50",
     authDomain: "battaglia-navale-multiplayer.firebaseapp.com",
@@ -15,8 +12,9 @@ const firebaseConfig = {
     appId: "1:788659808148:web:9d23a20f776eb1d6e99181"
 };
 
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
+// Inizializzazione Firebase Compat
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
 
 const SIZE = 10;
 const LETTERS = "ABCDEFGHIJ".split("");
@@ -111,7 +109,6 @@ const game = {
     soundEnabled: true,
     playerShotCount: 0,
     playerHitCount: 0,
-    lastOpponentShotKey: null,
     previewCells: []
 };
 
@@ -465,7 +462,7 @@ function autoPlacePlayer() {
     renderSetupBoard();[cite: 1]
 }
 
-// --- LOGICA MULTIPLAYER FIREBASE ---
+// --- LOGICA MULTIPLAYER FIREBASE (Compat) ---
 
 ui.joinRoomBtn.addEventListener("click", () => {
     const nameInput = ui.playerNameInput.value.trim();
@@ -488,27 +485,26 @@ ui.joinRoomBtn.addEventListener("click", () => {
 });
 
 function connectToRoom(code) {
-    const roomRefPath = `battaglia_rooms/${code}`;
+    const roomRef = db.ref(`battaglia_rooms/${code}`);
     ui.joinRoomBtn.disabled = true;
     ui.roomStatusBox.textContent = "Connessione alla stanza in corso...";
 
-    get(ref(db, roomRefPath)).then(snapshot => {
+    roomRef.once("value", snapshot => {
         const roomData = snapshot.val() || {};
 
         if (!roomData.p1) {
             game.playerRole = "p1";
-            set(ref(db, `${roomRefPath}/p1`), {
+            roomRef.child("p1").set({
                 name: game.playerName,
                 ready: false
             });
         } else if (!roomData.p2) {
             game.playerRole = "p2";
-            set(ref(db, `${roomRefPath}/p2`), {
+            roomRef.child("p2").set({
                 name: game.playerName,
                 ready: false
             });
         } else {
-            // Se la stanza ha già 2 giocatori, controlla se il nome corrisponde per riconnettersi
             if (roomData.p1.name === game.playerName) {
                 game.playerRole = "p1";
             } else if (roomData.p2.name === game.playerName) {
@@ -523,12 +519,11 @@ function connectToRoom(code) {
 
         playSound("click");
 
-        // Mostra il banner verde di connessione attiva
+        // Mostra il banner verde
         ui.connectionBanner.classList.remove("hidden");
         ui.connRoomLabel.textContent = `CONNESSO • STANZA: ${code}`;
         ui.roomMenuBtn.classList.remove("hidden");
 
-        // Aggiorna titoli con il nome giocatore
         ui.setupPlayerTitle.textContent = `Flotta di ${game.playerName}`;
         ui.myBattleTitle.textContent = `Flotta di ${game.playerName}`;
         ui.myShipsStatLabel.textContent = `Navi ${game.playerName}`;
@@ -540,8 +535,8 @@ function connectToRoom(code) {
         game.selectedShipId = game.playerShips[0].id;
         renderSetupBoard();
 
-        initFirebaseListeners(roomRefPath);
-    }).catch(err => {
+        initFirebaseListeners(roomRef);
+    }, err => {
         console.error(err);
         ui.joinRoomBtn.disabled = false;
         ui.roomStatusBox.textContent = "Errore di connessione a Firebase. Verifica le regole del database.";
@@ -559,7 +554,7 @@ ui.start.addEventListener("click", () => {
         cells: s.cells
     }));
 
-    update(ref(db, `battaglia_rooms/${game.roomCode}/${game.playerRole}`), {
+    db.ref(`battaglia_rooms/${game.roomCode}/${game.playerRole}`).update({
         ready: true,
         ships: serializedShips
     });
@@ -572,8 +567,8 @@ ui.start.addEventListener("click", () => {
     renderBattleBoards(false);
 });
 
-function initFirebaseListeners(roomRefPath) {
-    onValue(ref(db, roomRefPath), snapshot => {
+function initFirebaseListeners(roomRef) {
+    roomRef.on("value", snapshot => {
         const data = snapshot.val();
         if (!data) return;
 
@@ -582,7 +577,6 @@ function initFirebaseListeners(roomRefPath) {
         const opponentRole = game.playerRole === "p1" ? "p2" : "p1";
         const opponentData = data[opponentRole];
 
-        // Aggiorna nome avversario e barra verde in tempo reale
         if (opponentData && opponentData.name) {
             game.opponentName = opponentData.name;
             const statusText = opponentData.ready ? " (Pronto)" : " (Sta schierando...)";
@@ -593,16 +587,14 @@ function initFirebaseListeners(roomRefPath) {
             ui.connPlayersLabel.textContent = `${game.playerName} vs In attesa del 2° giocatore...`;
         }
 
-        // Salva navi avversarie se disponibili
         if (opponentData && opponentData.ships) {
             game.enemyShips = opponentData.ships;
         }
 
-        // Avvio automatico battaglia quando entrambi sono pronti
         if (p1 && p2 && p1.ready && p2.ready && game.phase === "waiting_opponent") {
             game.phase = "battle";
             if (!data.turn && game.playerRole === "p1") {
-                set(ref(db, `${roomRefPath}/turn`), "p1");
+                roomRef.child("turn").set("p1");
             }
         }
 
@@ -617,12 +609,10 @@ function updateBattleStateFromFirebase(data) {
     const myData = data[game.playerRole] || {};
     const opponentData = data[opponentRole] || {};
 
-    // Aggiorna colpi ricevuti dall'avversario
     if (opponentData.shotsFired) {
         const prevSize = game.opponentShots.size;
         game.opponentShots = new Set(opponentData.shotsFired);
 
-        // Suono se l'avversario ha appena sparato un nuovo colpo
         if (game.opponentShots.size > prevSize && game.phase === "battle") {
             const lastShot = opponentData.lastShotToOpponent;
             if (lastShot) {
@@ -631,7 +621,6 @@ function updateBattleStateFromFirebase(data) {
         }
     }
 
-    // Aggiorna miei colpi effettuati
     if (myData.shotsFired) {
         game.myShots = new Set(myData.shotsFired);
     }
@@ -645,7 +634,6 @@ function updateBattleStateFromFirebase(data) {
         return;
     }
 
-    // Aggiorna indicatore turno con i nomi reali
     if (isMyTurn) {
         ui.turn.textContent = `Tocca a ${game.playerName}`;
         ui.playerChip.textContent = "In difesa";
@@ -664,8 +652,8 @@ function updateBattleStateFromFirebase(data) {
 function handlePlayerShot(r, c) {
     if (game.phase !== "battle") return;
 
-    const roomRefPath = `battaglia_rooms/${game.roomCode}`;
-    get(ref(db, roomRefPath)).then(snapshot => {
+    const roomRef = db.ref(`battaglia_rooms/${game.roomCode}`);
+    roomRef.once("value", snapshot => {
         const data = snapshot.val();
         if (!data || data.turn !== game.playerRole) return;
 
@@ -699,12 +687,12 @@ function handlePlayerShot(r, c) {
             nextTurn = opponentRole;
         }
 
-        update(ref(db, `${roomRefPath}/${game.playerRole}`), {
+        roomRef.child(game.playerRole).update({
             shotsFired: shotsArray,
             lastShotToOpponent: { r, c, hit: !!hitShip }
         });
 
-        set(ref(db, `${roomRefPath}/turn`), nextTurn);
+        roomRef.child("turn").set(nextTurn);
     });
 }
 
@@ -761,7 +749,6 @@ function finishGame(playerWon) {
 }
 
 function renderBattleBoards(isMyTurn) {
-    // 1. Plancia del giocatore
     createBoard(ui.playerBoard, "player");
     const pBoard = ui.playerBoard.querySelector(".board");
     game.playerShips.forEach(ship => {
@@ -787,11 +774,9 @@ function renderBattleBoards(isMyTurn) {
         }
     }
 
-    // 2. Plancia dell'avversario
     createBoard(ui.enemyBoard, "enemy");
     const eBoard = ui.enemyBoard.querySelector(".board");
 
-    // Mostra l'immagine della nave nemica SOLO se completamente affondata
     game.enemyShips.forEach(ship => {
         if (ship.cells && ship.cells.length > 0) {
             const isSunk = ship.cells.every(([sr, sc]) => game.myShots.has(key(sr, sc)));
@@ -827,7 +812,6 @@ function renderBattleBoards(isMyTurn) {
     ui.accuracy.textContent = `${game.playerShotCount ? Math.round((game.playerHitCount / game.playerShotCount) * 100) : 0}%`;
 }
 
-// Event Listeners
 ui.rotate.addEventListener("click", () => {
     game.orientation = game.orientation === "H" ? "V" : "H";
     ui.rotate.textContent = `↻ Ruota: ${game.orientation === "H" ? "orizzontale" : "verticale"}`;
@@ -845,7 +829,7 @@ ui.soundToggle.addEventListener("click", () => {
 ui.roomMenuBtn.addEventListener("click", () => {
     if (confirm("Vuoi uscire dalla stanza attuale?")) {
         if (game.roomCode && game.phase === "finished") {
-            remove(ref(db, `battaglia_rooms/${game.roomCode}`)).finally(() => location.reload());
+            db.ref(`battaglia_rooms/${game.roomCode}`).remove().finally(() => location.reload());
         } else {
             location.reload();
         }
@@ -856,7 +840,7 @@ ui.rulesToggle.addEventListener("click", () => ui.rulesDialog.showModal());
 
 ui.playAgain.addEventListener("click", () => {
     if (game.roomCode) {
-        remove(ref(db, `battaglia_rooms/${game.roomCode}`)).finally(() => location.reload());
+        db.ref(`battaglia_rooms/${game.roomCode}`).remove().finally(() => location.reload());
     } else {
         location.reload();
     }
