@@ -234,9 +234,25 @@
         </form>
     </dialog>
 
-    <!-- Firebase SDK Compat v10 (Uguale al test di prova funzionante) -->
+    <!-- Firebase SDK Compat (Versione stabile identica al test di prova) -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+
+    <!-- Inizializzazione Firebase con i tuoi dati -->
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyBkc2s0vZjby7EnGd_9gsrd8eySFFb-s50",
+            authDomain: "battaglia-navale-multiplayer.firebaseapp.com",
+            databaseURL: "https://battaglia-navale-multiplayer-default-rtdb.firebaseio.com",
+            projectId: "battaglia-navale-multiplayer",
+            storageBucket: "battaglia-navale-multiplayer.firebasestorage.app",
+            messagingSenderId: "788659808148",
+            appId: "1:788659808148:web:9d23a20f776eb1d6e99181"
+        };
+        firebase.initializeApp(firebaseConfig);
+    </script>
+
+    <!-- Il tuo script di gioco -->
     <script src="script.js"></script>
 </body>
 </html>
