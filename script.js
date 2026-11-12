@@ -149,7 +149,7 @@ function playSound(name) {
     if (!game.soundEnabled) return;
     const audio = new Audio(SOUND_FILES[name]);
     audio.volume = 0.45;
-    audio.play().catch(() => { });
+    audio.play().catch(() => {});
 }
 
 function shipImage(ship, className = "ship-image") {
