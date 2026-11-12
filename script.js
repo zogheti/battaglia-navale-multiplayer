@@ -1,7 +1,12 @@
 /* Battaglia Navale - Multiplayer Firebase (Compat SDK) */
 "use strict";
 
-// --- TUA CONFIGURAZIONE FIREBASE ---
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
 const firebaseConfig = {
     apiKey: "AIzaSyBkc2s0vZjby7EnGd_9gsrd8eySFFb-s50",
     authDomain: "battaglia-navale-multiplayer.firebaseapp.com",
@@ -12,9 +17,9 @@ const firebaseConfig = {
     appId: "1:788659808148:web:9d23a20f776eb1d6e99181"
 };
 
-// Inizializzazione Firebase Compat
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);// JavaScript source code
+
 
 const SIZE = 10;
 const LETTERS = "ABCDEFGHIJ".split("");
