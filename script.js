@@ -93,6 +93,7 @@ const game = {
     playerShips: [],
     myShots: new Set(),
     opponentShots: new Set(),
+    myShotResults: {},
     selectedShipId: null,
     orientation: "H",
     phase: "room",
@@ -357,6 +358,7 @@ function addFireOverlay(cell) {
     const fireImg = document.createElement("img");
     fireImg.src = "assets/ships/fuoco.gif";
     fireImg.className = "fire-overlay";
+    cell.style.position = "relative";
     fireImg.alt = "Colpito";
     fireImg.draggable = false;
     fireImg.style.position = "absolute";
@@ -541,81 +543,151 @@ function initFirebaseListeners(roomRefPath) {
 
 function updateBattleStateFromFirebase(data) {
     const opponentRole = game.playerRole === "p1" ? "p2" : "p1";
+
     const myData = data[game.playerRole] || {};
     const opponentData = data[opponentRole] || {};
 
-    if (opponentData.lastShot) {
-        const shotKey = key(opponentData.lastShot.r, opponentData.lastShot.c);
-        game.opponentShots.add(shotKey);
-    }
+    // Colpi effettuati da me
+    game.myShots = new Set(myData.shotsFired || []);
 
-    if (myData.shotsFired) {
-        game.myShots = new Set(myData.shotsFired);
-    }
+    // Risultato di ogni mio colpo
+    game.myShotResults = myData.shotResults || {};
+
+    // Colpi ricevuti dall'avversario
+    game.opponentShots = new Set(opponentData.shotsFired || []);
+
+    // Aggiornamento statistiche
+    game.playerShotCount = game.myShots.size;
+
+    game.playerHitCount = Object.values(game.myShotResults)
+        .filter(result => result === true).length;
 
     renderBattleBoards();
 
     const currentTurn = data.turn;
+
     if (currentTurn === game.playerRole) {
         ui.turn.textContent = "Tuo turno";
-        setStatus("È il tuo turno!", "Clicca su una casella del settore avversario per sparare.", "cyan");
+
+        setStatus(
+            "È il tuo turno!",
+            "Clicca su una casella del settore avversario per sparare.",
+            "cyan"
+        );
     } else {
         ui.turn.textContent = "Avversario";
-        setStatus("Turno avversario", "L'avversario sta mirando...", "gold");
+
+        setStatus(
+            "Turno avversario",
+            "L'avversario sta mirando...",
+            "gold"
+        );
     }
 
     checkWinConditions(data);
 }
 
 function handlePlayerShot(r, c) {
+
+    if (game.phase !== "battle") return;
+
     const roomRefPath = `battaglia_rooms/${game.roomCode}`;
+
     get(ref(db, roomRefPath)).then(snapshot => {
+
         const data = snapshot.val();
-        if (!data || data.turn !== game.playerRole || game.phase !== "battle") return;
+
+        if (!data || data.turn !== game.playerRole) return;
 
         const shotKey = key(r, c);
+
+        // Impedisce di sparare due volte nella stessa casella
         if (game.myShots.has(shotKey)) return;
 
-        game.myShots.add(shotKey);
-        game.playerShotCount++;
-        playSound("shot");
-
         const opponentRole = game.playerRole === "p1" ? "p2" : "p1";
-        const opponentShips = data[opponentRole].ships || [];
 
+        const opponentShips = data[opponentRole]?.ships || [];
+
+        // Verifica se il colpo ha centrato una nave avversaria
         let hitShip = null;
+
         for (const ship of opponentShips) {
+
             if (ship.cells.some(([sr, sc]) => sr === r && sc === c)) {
                 hitShip = ship;
                 break;
             }
         }
 
-        const shotsArray = Array.from(game.myShots);
-        let nextTurn = game.playerRole;
+        // Aggiorna lo storico dei colpi
+        game.myShots.add(shotKey);
+
+        game.myShotResults[shotKey] = !!hitShip;
+
+        game.playerShotCount = game.myShots.size;
+
+        game.playerHitCount = Object.values(game.myShotResults)
+            .filter(result => result === true).length;
 
         if (hitShip) {
+
             playSound("hit");
-            game.playerHitCount++;
-            const targetCell = getBoardCell(ui.enemyBoard, r, c);
-            if (targetCell) addFireOverlay(targetCell);
-            setStatus("Colpo a segno!", "Impatto confermato! Tiri ancora.", "cyan");
+
+            setStatus(
+                "Colpo a segno!",
+                "Impatto confermato! Hai diritto a un altro tiro.",
+                "cyan"
+            );
+
         } else {
+
             playSound("water");
-            setStatus("Acqua!", "Colpo in acqua. Turno dell'avversario.", "gold");
-            nextTurn = opponentRole;
+
+            setStatus(
+                "Acqua!",
+                "Colpo in acqua. Turno dell'avversario.",
+                "gold"
+            );
         }
 
-        update(ref(db, `${roomRefPath}/${game.playerRole}`), {
-            shotsFired: shotsArray,
-            lastShotToOpponent: { r, c, hit: !!hitShip }
+        // Salva i colpi e i risultati sotto il giocatore che ha sparato
+        const playerUpdate = update(
+            ref(db, `${roomRefPath}/${game.playerRole}`),
+            {
+                shotsFired: Array.from(game.myShots),
+                shotResults: game.myShotResults
+            }
+        );
+
+        // Aggiorna il turno soltanto dopo aver salvato il colpo
+        playerUpdate.then(() => {
+
+            const nextTurn = hitShip
+                ? game.playerRole
+                : opponentRole;
+
+            return set(ref(db, `${roomRefPath}/turn`), nextTurn);
+
+        }).then(() => {
+
+            renderBattleBoards();
+
+        }).catch(error => {
+
+            console.error("Errore durante il salvataggio del colpo:", error);
+
+            setStatus(
+                "Errore di connessione",
+                "Impossibile registrare il colpo su Firebase.",
+                "red"
+            );
+
         });
 
-        update(ref(db, `${roomRefPath}/${opponentRole}`), {
-            lastShot: { r, c }
-        });
+    }).catch(error => {
 
-        set(ref(db, `${roomRefPath}/turn`), nextTurn);
+        console.error("Errore nella lettura della stanza:", error);
+
     });
 }
 
@@ -664,44 +736,112 @@ function finishGame(playerWon) {
 }
 
 function renderBattleBoards() {
+
+    // ==========================================
+    // TABELLONE PERSONALE
+    // ==========================================
+
     createBoard(ui.playerBoard, "player");
+
     const pBoard = ui.playerBoard.querySelector(".board");
+
+    // Visualizza le proprie navi
     game.playerShips.forEach(ship => {
-        if (ship.cells.length) addShipOverlay(pBoard, ship);
-    });
-    for (let r = 0; r < SIZE; r++) {
-        for (let c = 0; c < SIZE; c++) {
-            const cell = getBoardCell(ui.playerBoard, r, c);
-            const k = key(r, c);
-            const ship = shipAt(game.playerShips, r, c);
-            if (game.opponentShots.has(k)) {
-                if (ship) {
-                    cell.classList.add("hit");
-                    addFireOverlay(cell);
-                } else {
-                    cell.classList.add("miss");
-                }
-            }
+
+        if (ship.cells.length) {
+            addShipOverlay(pBoard, ship);
         }
+
+    });
+
+    // Visualizza i colpi ricevuti dall'avversario
+    for (let r = 0; r < SIZE; r++) {
+
+        for (let c = 0; c < SIZE; c++) {
+
+            const cell = getBoardCell(ui.playerBoard, r, c);
+
+            const k = key(r, c);
+
+            const ship = shipAt(game.playerShips, r, c);
+
+            if (game.opponentShots.has(k)) {
+
+                if (ship) {
+
+                    cell.classList.add("hit");
+
+                    addFireOverlay(cell);
+
+                } else {
+
+                    cell.classList.add("miss");
+
+                }
+
+            }
+
+        }
+
     }
 
+
+    // ==========================================
+    // TABELLONE AVVERSARIO
+    // ==========================================
+
     createBoard(ui.enemyBoard, "enemy");
+
     for (let r = 0; r < SIZE; r++) {
+
         for (let c = 0; c < SIZE; c++) {
+
             const cell = getBoardCell(ui.enemyBoard, r, c);
+
             const k = key(r, c);
+
             const isShot = game.myShots.has(k);
+
             cell.disabled = game.phase !== "battle" || isShot;
 
             if (isShot) {
-                cell.classList.add("miss");
+
+                const wasHit = game.myShotResults[k] === true;
+
+                if (wasHit) {
+
+                    cell.classList.add("hit");
+
+                    addFireOverlay(cell);
+
+                } else {
+
+                    cell.classList.add("miss");
+
+                }
+
             }
+
         }
+
     }
 
+
+    // ==========================================
+    // STATISTICHE
+    // ==========================================
+
     ui.shots.textContent = game.playerShotCount;
+
     ui.hits.textContent = game.playerHitCount;
-    ui.accuracy.textContent = `${game.playerShotCount ? Math.round((game.playerHitCount / game.playerShotCount) * 100) : 0}%`;
+
+    ui.accuracy.textContent =
+        `${game.playerShotCount
+            ? Math.round(
+                (game.playerHitCount / game.playerShotCount) * 100
+            )
+            : 0}%`;
+
 }
 
 ui.rotate.addEventListener("click", () => {
