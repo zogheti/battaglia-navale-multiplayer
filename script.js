@@ -108,7 +108,8 @@ const game = {
     soundEnabled: true,
     playerShotCount: 0,
     playerHitCount: 0,
-    previewCells: []
+    previewCells: [],
+    opponentShips: []
 };
 
 function makeFleet() {
@@ -607,6 +608,7 @@ function updateBattleStateFromFirebase(data) {
 
     const myData = data[game.playerRole] || {};
     const opponentData = data[opponentRole] || {};
+    game.opponentShips = opponentData.ships || [];
 
     // Colpi effettuati da me
     game.myShots = new Set(myData.shotsFired || []);
@@ -852,6 +854,20 @@ function renderBattleBoards() {
     // ==========================================
 
     createBoard(ui.enemyBoard, "enemy");
+    const eBoard = ui.enemyBoard.querySelector(".board");
+
+    // Mostra soltanto le navi completamente affondate
+    game.opponentShips.forEach(ship => {
+
+        const isSunk = ship.cells.every(([r, c]) =>
+            game.myShots.has(key(r, c))
+        );
+
+        if (isSunk) {
+            addShipOverlay(eBoard, ship);
+        }
+
+    });
 
     for (let r = 0; r < SIZE; r++) {
 
