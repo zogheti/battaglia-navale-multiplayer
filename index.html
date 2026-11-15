@@ -86,21 +86,19 @@
                     <div id="enemy-board" class="board-wrap"></div>
                 </article>
             </div>
+
             <section class="status-panel" aria-live="polite">
                 <div class="status-light" id="status-light"></div>
                 <div class="status-copy">
-                    <strong id="status-title">In attesa</strong>
+                    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                        <strong id="status-title">In attesa</strong>
+                        <!-- TURNO SPOSTATO QUI -->
+                        <span id="turn-count" style="font-family: 'Barlow Condensed', Impact, sans-serif; font-size: 16px; font-weight: 700; color: var(--cyan-soft); text-transform: uppercase; letter-spacing: 0.05em;">—</span>
+                    </div>
                     <span id="status-message">Sincronizzazione in corso...</span>
                 </div>
                 <div class="status-stat"><span>Navi tue</span><strong id="player-ships-left">7</strong></div>
                 <div class="status-stat"><span>Navi avversarie</span><strong id="enemy-ships-left">7</strong></div>
-            </section>
-
-            <section class="stats-grid">
-                <div class="mini-stat"><span>Colpi sparati</span><strong id="shots-count">0</strong></div>
-                <div class="mini-stat"><span>Colpi a segno</span><strong id="hits-count">0</strong></div>
-                <div class="mini-stat"><span>Precisione</span><strong id="accuracy-count">0%</strong></div>
-                <div class="mini-stat"><span>Turno</span><strong id="turn-count">—</strong></div>
             </section>
         </section>
 

@@ -85,10 +85,7 @@ const ui = {
     autoPlace: $("auto-place"),
     start: $("start-game"),
     soundToggle: $("sound-toggle"),
-    shots: $("shots-count"),
-    hits: $("hits-count"),
-    accuracy: $("accuracy-count"),
-    turn: $("turn-count"),
+    turn: $("turn-count"), // Ora punta al nuovo span nella barra superiore
     playerChip: $("player-board-chip"),
     enemyChip: $("enemy-board-chip"),
     rulesToggle: $("rules-toggle"),
@@ -548,17 +545,18 @@ ui.start.addEventListener("click", () => {
         cells: s.cells
     }));
 
+    // Aggiorniamo il nostro stato su Firebase impostandoci come pronti
     update(ref(db, `battaglia_rooms/${game.roomCode}/${game.playerRole}`), {
         ready: true,
         ships: serializedShips
+    }).then(() => {
+        game.phase = "waiting_opponent";
+        ui.setupPanel.classList.add("hidden");
+        ui.battlePanel.classList.remove("hidden");
+        setStatus("In attesa dell'avversario", "Hai schierato la flotta. Aspettando che l'altro giocatore sia pronto...");
+        playSound("inizio");
+        renderBattleBoards();
     });
-
-    game.phase = "waiting_opponent";
-    ui.setupPanel.classList.add("hidden");
-    ui.battlePanel.classList.remove("hidden");
-    setStatus("In attesa dell'avversario", "Hai schierato la flotta. Aspettando che l'altro giocatore sia pronto...");
-    playSound("inizio");
-    renderBattleBoards();
 });
 
 function initFirebaseListeners(roomRefPath) {
@@ -569,15 +567,22 @@ function initFirebaseListeners(roomRefPath) {
         const p1 = data.p1;
         const p2 = data.p2;
 
-        if (p1 && p2 && p1.connected && p2.connected && p1.ready && p2.ready && game.phase === "waiting_opponent") {
-            game.phase = "battle";
-            if (!data.turn) {
-                if (game.playerRole === "p1") {
-                    set(ref(db, `${roomRefPath}/turn`), "p1");
+        // Controlliamo se entrambi i giocatori sono connessi e pronti
+        const bothReady = p1 && p2 && p1.connected && p2.connected && p1.ready && p2.ready;
+
+        if (bothReady) {
+            // Se la partita è ancora in attesa o setup, la facciamo partire
+            if (game.phase === "waiting_opponent" || game.phase === "setup") {
+                game.phase = "battle";
+
+                // Solo il Giocatore 1 imposta il turno iniziale se non è ancora presente
+                if (game.playerRole === "p1" && !data.turn) {
+                    set(ref(db, `${roomRefPath}/turn`), "p1").catch(err => console.error("Errore impostazione turno:", err));
                 }
             }
         }
 
+        // Se siamo in fase di battaglia o in attesa, aggiorniamo la schermata di gioco
         if (game.phase === "battle" || game.phase === "waiting_opponent") {
             updateBattleStateFromFirebase(data);
         }
@@ -595,10 +600,6 @@ function updateBattleStateFromFirebase(data) {
     game.myShotResults = myData.shotResults || {};
     game.opponentShots = new Set(opponentData.shotsFired || []);
 
-    game.playerShotCount = game.myShots.size;
-    game.playerHitCount = Object.values(game.myShotResults)
-        .filter(result => result === true).length;
-
     renderBattleBoards();
 
     const currentTurn = data.turn;
@@ -611,7 +612,7 @@ function updateBattleStateFromFirebase(data) {
             "cyan"
         );
     } else {
-        ui.turn.textContent = "Avversario";
+        ui.turn.textContent = "Turno avversario";
         setStatus(
             "Turno avversario",
             "L'avversario sta mirando...",
@@ -743,16 +744,20 @@ function finishGame(playerWon) {
 }
 
 function renderBattleBoards() {
+    // ==========================================
     // TABELLONE PERSONALE
+    // ==========================================
     createBoard(ui.playerBoard, "player");
     const pBoard = ui.playerBoard.querySelector(".board");
 
+    // Visualizza le proprie navi
     game.playerShips.forEach(ship => {
         if (ship.cells.length) {
             addShipOverlay(pBoard, ship);
         }
     });
 
+    // Visualizza i colpi ricevuti dall'avversario
     for (let r = 0; r < SIZE; r++) {
         for (let c = 0; c < SIZE; c++) {
             const cell = getBoardCell(ui.playerBoard, r, c);
@@ -770,10 +775,13 @@ function renderBattleBoards() {
         }
     }
 
+    // ==========================================
     // TABELLONE AVVERSARIO
+    // ==========================================
     createBoard(ui.enemyBoard, "enemy");
     const eBoard = ui.enemyBoard.querySelector(".board");
 
+    // Mostra soltanto le navi completamente affondate
     game.opponentShips.forEach(ship => {
         const isSunk = ship.cells.every(([r, c]) =>
             game.myShots.has(key(r, c))
@@ -802,6 +810,7 @@ function renderBattleBoards() {
             }
         }
     }
+}
 
     // STATISTICHE
     ui.shots.textContent = game.playerShotCount;

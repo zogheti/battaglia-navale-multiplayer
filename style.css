@@ -513,6 +513,9 @@ margin-bottom: 9px;
 
 .battle-panel {
     margin-top: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
 }
 
 .battle-heading {
