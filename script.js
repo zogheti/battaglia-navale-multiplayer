@@ -85,7 +85,7 @@ const ui = {
     autoPlace: $("auto-place"),
     start: $("start-game"),
     soundToggle: $("sound-toggle"),
-    turn: $("turn-count"), // Ora punta al nuovo span nella barra superiore
+    turn: $("turn-count"),
     playerChip: $("player-board-chip"),
     enemyChip: $("enemy-board-chip"),
     rulesToggle: $("rules-toggle"),
@@ -95,6 +95,9 @@ const ui = {
     resultMessage: $("result-message"),
     playAgain: $("play-again")
 };
+
+// ID univoco per identificare questo specifico browser/telefono nella stanza
+const MY_SESSION_ID = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
 const game = {
     roomCode: null,
@@ -141,8 +144,8 @@ function shipAt(ships, r, c) {
 }
 
 function setStatus(title, message, color = "gold") {
-    ui.statusTitle.textContent = title;
-    ui.statusMessage.textContent = message;
+    if (ui.statusTitle) ui.statusTitle.textContent = title;
+    if (ui.statusMessage) ui.statusMessage.textContent = message;
 
     const colors = {
         red: { bg: "#ff645f", shadow: "rgba(255,100,95,.6)" },
@@ -151,8 +154,10 @@ function setStatus(title, message, color = "gold") {
     };
 
     const current = colors[color] || colors.gold;
-    ui.statusLight.style.background = current.bg;
-    ui.statusLight.style.boxShadow = `0 0 12px ${current.shadow}`;
+    if (ui.statusLight) {
+        ui.statusLight.style.background = current.bg;
+        ui.statusLight.style.boxShadow = `0 0 12px ${current.shadow}`;
+    }
 }
 
 function playSound(name) {
@@ -472,48 +477,62 @@ ui.joinRoomBtn.addEventListener("click", () => {
         alert("Inserisci un codice stanza valido!");
         return;
     }
-    game.roomCode = code;
     connectToRoom(code);
 });
 
 async function connectToRoom(code) {
     const roomRefPath = `battaglia_rooms/${code}`;
+    const roomRef = ref(db, roomRefPath);
     ui.roomStatusBox.textContent = "Connessione alla stanza in corso...";
 
     try {
-        let assignedRole = null;
+        const txResult = await runTransaction(roomRef, (current) => {
+            // Se la stanza non esiste, o se entrambi sono offline, la inizializziamo da zero
+            const p1Online = current?.p1?.connected === true;
+            const p2Online = current?.p2?.connected === true;
 
-        // Tentativo di unirsi come P1 in modo atomico
-        const p1Result = await runTransaction(ref(db, `${roomRefPath}/p1`), (current) => {
-            if (current === null || current.connected !== true) {
-                return { connected: true, ready: false };
+            if (current === null || (!p1Online && !p2Online)) {
+                return {
+                    p1: { connected: true, ready: false, sessionId: MY_SESSION_ID },
+                    p2: { connected: false, ready: false, sessionId: null },
+                    turn: null
+                };
             }
-            return; // Occupato
+
+            // Se P1 è libero (o siamo già noi)
+            if (!p1Online || current.p1?.sessionId === MY_SESSION_ID) {
+                current.p1 = { connected: true, ready: false, sessionId: MY_SESSION_ID };
+                return current;
+            }
+
+            // Se P2 è libero (o siamo già noi)
+            if (!p2Online || current.p2?.sessionId === MY_SESSION_ID) {
+                current.p2 = { connected: true, ready: false, sessionId: MY_SESSION_ID };
+                return current;
+            }
+
+            // Stanza piena
+            return;
         });
 
-        if (p1Result.committed) {
-            assignedRole = "p1";
-        } else {
-            // Tentativo di unirsi come P2 in modo atomico
-            const p2Result = await runTransaction(ref(db, `${roomRefPath}/p2`), (current) => {
-                if (current === null || current.connected !== true) {
-                    return { connected: true, ready: false };
-                }
-                return; // Occupato
-            });
-
-            if (p2Result.committed) {
-                assignedRole = "p2";
-            } else {
-                ui.roomStatusBox.textContent = "Stanza piena! Entrambi i giocatori sono già presenti.";
-                return;
-            }
+        if (!txResult.committed) {
+            ui.roomStatusBox.textContent = "Stanza piena! Entrambi i giocatori sono già presenti.";
+            return;
         }
 
-        game.playerRole = assignedRole;
+        const roomData = txResult.snapshot.val();
+        if (roomData?.p1?.sessionId === MY_SESSION_ID) {
+            game.playerRole = "p1";
+        } else if (roomData?.p2?.sessionId === MY_SESSION_ID) {
+            game.playerRole = "p2";
+        } else {
+            ui.roomStatusBox.textContent = "Errore nell'assegnazione del ruolo. Riprova.";
+            return;
+        }
+
         game.roomCode = code;
 
-        // Registra la disconnessione automatica del giocatore
+        // Disconnessione automatica se si chiude il browser/scheda
         const playerRef = ref(db, `${roomRefPath}/${game.playerRole}`);
         onDisconnect(playerRef).update({ connected: false, ready: false });
 
@@ -545,17 +564,21 @@ ui.start.addEventListener("click", () => {
         cells: s.cells
     }));
 
-    // Aggiorniamo il nostro stato su Firebase impostandoci come pronti
     update(ref(db, `battaglia_rooms/${game.roomCode}/${game.playerRole}`), {
+        connected: true,
         ready: true,
         ships: serializedShips
     }).then(() => {
         game.phase = "waiting_opponent";
         ui.setupPanel.classList.add("hidden");
         ui.battlePanel.classList.remove("hidden");
+        if (ui.turn) ui.turn.textContent = "In attesa";
         setStatus("In attesa dell'avversario", "Hai schierato la flotta. Aspettando che l'altro giocatore sia pronto...");
         playSound("inizio");
         renderBattleBoards();
+    }).catch(err => {
+        console.error("Errore invio flotta:", err);
+        alert("Errore di rete durante l'invio della flotta. Riprova.");
     });
 });
 
@@ -567,22 +590,15 @@ function initFirebaseListeners(roomRefPath) {
         const p1 = data.p1;
         const p2 = data.p2;
 
-        // Controlliamo se entrambi i giocatori sono connessi e pronti
-        const bothReady = p1 && p2 && p1.connected && p2.connected && p1.ready && p2.ready;
+        const bothReady = p1 && p2 && p1.ready === true && p2.ready === true;
 
-        if (bothReady) {
-            // Se la partita è ancora in attesa o setup, la facciamo partire
-            if (game.phase === "waiting_opponent" || game.phase === "setup") {
-                game.phase = "battle";
-
-                // Solo il Giocatore 1 imposta il turno iniziale se non è ancora presente
-                if (game.playerRole === "p1" && !data.turn) {
-                    set(ref(db, `${roomRefPath}/turn`), "p1").catch(err => console.error("Errore impostazione turno:", err));
-                }
+        if (bothReady && (game.phase === "waiting_opponent" || game.phase === "setup")) {
+            game.phase = "battle";
+            if (game.playerRole === "p1" && !data.turn) {
+                set(ref(db, `${roomRefPath}/turn`), "p1").catch(err => console.error("Errore turno:", err));
             }
         }
 
-        // Se siamo in fase di battaglia o in attesa, aggiorniamo la schermata di gioco
         if (game.phase === "battle" || game.phase === "waiting_opponent") {
             updateBattleStateFromFirebase(data);
         }
@@ -600,19 +616,33 @@ function updateBattleStateFromFirebase(data) {
     game.myShotResults = myData.shotResults || {};
     game.opponentShots = new Set(opponentData.shotsFired || []);
 
+    game.playerShotCount = game.myShots.size;
+    game.playerHitCount = Object.values(game.myShotResults)
+        .filter(result => result === true).length;
+
     renderBattleBoards();
+
+    if (game.phase === "waiting_opponent") {
+        if (ui.turn) ui.turn.textContent = "In attesa";
+        setStatus(
+            "In attesa dell'avversario",
+            "Hai schierato la flotta. Aspettando che l'altro giocatore sia pronto...",
+            "gold"
+        );
+        return;
+    }
 
     const currentTurn = data.turn;
 
     if (currentTurn === game.playerRole) {
-        ui.turn.textContent = "Tuo turno";
+        if (ui.turn) ui.turn.textContent = "Tuo turno";
         setStatus(
             "È il tuo turno!",
             "Clicca su una casella del settore avversario per sparare.",
             "cyan"
         );
     } else {
-        ui.turn.textContent = "Turno avversario";
+        if (ui.turn) ui.turn.textContent = "Turno avversario";
         setStatus(
             "Turno avversario",
             "L'avversario sta mirando...",
@@ -715,8 +745,8 @@ function checkWinConditions(data) {
         if (allHit) mySunkCount++;
     });
 
-    ui.playerShipsLeft.textContent = myShips.length - mySunkCount;
-    ui.enemyShipsLeft.textContent = opponentShips.length - enemySunkCount;
+    if (ui.playerShipsLeft) ui.playerShipsLeft.textContent = myShips.length - mySunkCount;
+    if (ui.enemyShipsLeft) ui.enemyShipsLeft.textContent = opponentShips.length - enemySunkCount;
 
     if (enemySunkCount === opponentShips.length && opponentShips.length > 0) {
         finishGame(true);
@@ -734,7 +764,7 @@ function finishGame(playerWon) {
 
     playSound(playerWon ? "victory" : "defeat");
 
-    // Il Giocatore 1 pulisce ed elimina la stanza alla fine del match
+    // Pulisce la stanza su Firebase alla fine della partita
     if (game.playerRole === "p1" && game.roomCode) {
         const roomRef = ref(db, `battaglia_rooms/${game.roomCode}`);
         remove(roomRef).catch(err => console.error("Errore pulizia stanza:", err));
@@ -750,14 +780,12 @@ function renderBattleBoards() {
     createBoard(ui.playerBoard, "player");
     const pBoard = ui.playerBoard.querySelector(".board");
 
-    // Visualizza le proprie navi
     game.playerShips.forEach(ship => {
         if (ship.cells.length) {
             addShipOverlay(pBoard, ship);
         }
     });
 
-    // Visualizza i colpi ricevuti dall'avversario
     for (let r = 0; r < SIZE; r++) {
         for (let c = 0; c < SIZE; c++) {
             const cell = getBoardCell(ui.playerBoard, r, c);
@@ -781,7 +809,6 @@ function renderBattleBoards() {
     createBoard(ui.enemyBoard, "enemy");
     const eBoard = ui.enemyBoard.querySelector(".board");
 
-    // Mostra soltanto le navi completamente affondate
     game.opponentShips.forEach(ship => {
         const isSunk = ship.cells.every(([r, c]) =>
             game.myShots.has(key(r, c))
@@ -810,17 +837,6 @@ function renderBattleBoards() {
             }
         }
     }
-}
-
-    // STATISTICHE
-    ui.shots.textContent = game.playerShotCount;
-    ui.hits.textContent = game.playerHitCount;
-    ui.accuracy.textContent =
-        `${game.playerShotCount
-            ? Math.round(
-                (game.playerHitCount / game.playerShotCount) * 100
-            )
-            : 0}%`;
 }
 
 ui.rotate.addEventListener("click", () => {
