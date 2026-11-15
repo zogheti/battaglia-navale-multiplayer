@@ -11,7 +11,8 @@ import {
     get,
     update,
     runTransaction,
-    onDisconnect
+    onDisconnect,
+    remove
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
 // --- CONFIGURAZIONE FIREBASE ---
@@ -478,121 +479,64 @@ ui.joinRoomBtn.addEventListener("click", () => {
     connectToRoom(code);
 });
 
-
 async function connectToRoom(code) {
-
     const roomRefPath = `battaglia_rooms/${code}`;
-
     ui.roomStatusBox.textContent = "Connessione alla stanza in corso...";
 
     try {
+        let assignedRole = null;
 
-        // Elimina la stanza se entrambi i giocatori risultano disconnessi
-        await runTransaction(ref(db, roomRefPath), current => {
-
-            if (current === null) {
-                return null;
+        // Tentativo di unirsi come P1 in modo atomico
+        const p1Result = await runTransaction(ref(db, `${roomRefPath}/p1`), (current) => {
+            if (current === null || current.connected !== true) {
+                return { connected: true, ready: false };
             }
-
-            const p1Offline = !current.p1 || current.p1.connected !== true;
-            const p2Offline = !current.p2 || current.p2.connected !== true;
-
-            if (p1Offline && p2Offline) {
-                return null;
-            }
-
-            return current;
+            return; // Occupato
         });
 
-        // Prova ad assegnare il posto al giocatore 1
-        const p1Result = await runTransaction(
-            ref(db, `${roomRefPath}/p1`),
-            current => {
-
-                if (current === null || current.connected !== true) {
-                    return {
-                        ready: false,
-                        connected: true
-                    };
-                }
-
-                return;
-            }
-        );
-
         if (p1Result.committed) {
-
-            game.playerRole = "p1";
-
+            assignedRole = "p1";
         } else {
-
-            // Se P1 è occupato, prova con P2
-            const p2Result = await runTransaction(
-                ref(db, `${roomRefPath}/p2`),
-                current => {
-
-                    if (current === null || current.connected !== true) {
-                        return {
-                            ready: false,
-                            connected: true
-                        };
-                    }
-
-                    return;
+            // Tentativo di unirsi come P2 in modo atomico
+            const p2Result = await runTransaction(ref(db, `${roomRefPath}/p2`), (current) => {
+                if (current === null || current.connected !== true) {
+                    return { connected: true, ready: false };
                 }
-            );
+                return; // Occupato
+            });
 
             if (p2Result.committed) {
-
-                game.playerRole = "p2";
-
+                assignedRole = "p2";
             } else {
-
-                ui.roomStatusBox.textContent =
-                    "Stanza piena! Entrambi i giocatori sono già presenti.";
-
+                ui.roomStatusBox.textContent = "Stanza piena! Entrambi i giocatori sono già presenti.";
                 return;
             }
         }
 
+        game.playerRole = assignedRole;
         game.roomCode = code;
 
         // Registra la disconnessione automatica del giocatore
-        await onDisconnect(
-            ref(db, `${roomRefPath}/${game.playerRole}/connected`)
-        ).set(false);
+        const playerRef = ref(db, `${roomRefPath}/${game.playerRole}`);
+        onDisconnect(playerRef).update({ connected: false, ready: false });
 
         ui.roomPanel.classList.add("hidden");
         ui.setupPanel.classList.remove("hidden");
-
         game.phase = "setup";
-
         game.playerShips = makeFleet();
-
         game.selectedShipId = game.playerShips[0].id;
 
         renderSetupBoard();
-
-        setStatus(
-            "Schiera la tua flotta",
-            `Connesso come Giocatore ${game.playerRole === "p1" ? "1" : "2"}.`
-        );
-
-        ui.roomStatusBox.textContent =
-            `Connesso correttamente come ${game.playerRole.toUpperCase()}.`;
+        setStatus("Schiera la tua flotta", `Connesso come Giocatore ${game.playerRole === "p1" ? "1" : "2"}.`);
+        ui.roomStatusBox.textContent = `Connesso correttamente come ${game.playerRole.toUpperCase()}.`;
 
         initFirebaseListeners(roomRefPath);
 
     } catch (error) {
-
         console.error("Errore connessione Firebase:", error);
-
-        ui.roomStatusBox.textContent =
-            "Errore durante la connessione alla stanza.";
-
+        ui.roomStatusBox.textContent = "Errore durante la connessione alla stanza.";
     }
 }
-
 
 ui.start.addEventListener("click", () => {
     if (game.playerShips.some(s => !s.cells.length)) return;
@@ -625,7 +569,7 @@ function initFirebaseListeners(roomRefPath) {
         const p1 = data.p1;
         const p2 = data.p2;
 
-        if (p1 && p2 && p1.ready && p2.ready && game.phase === "waiting_opponent") {
+        if (p1 && p2 && p1.connected && p2.connected && p1.ready && p2.ready && game.phase === "waiting_opponent") {
             game.phase = "battle";
             if (!data.turn) {
                 if (game.playerRole === "p1") {
@@ -647,18 +591,11 @@ function updateBattleStateFromFirebase(data) {
     const opponentData = data[opponentRole] || {};
     game.opponentShips = opponentData.ships || [];
 
-    // Colpi effettuati da me
     game.myShots = new Set(myData.shotsFired || []);
-
-    // Risultato di ogni mio colpo
     game.myShotResults = myData.shotResults || {};
-
-    // Colpi ricevuti dall'avversario
     game.opponentShots = new Set(opponentData.shotsFired || []);
 
-    // Aggiornamento statistiche
     game.playerShotCount = game.myShots.size;
-
     game.playerHitCount = Object.values(game.myShotResults)
         .filter(result => result === true).length;
 
@@ -668,7 +605,6 @@ function updateBattleStateFromFirebase(data) {
 
     if (currentTurn === game.playerRole) {
         ui.turn.textContent = "Tuo turno";
-
         setStatus(
             "È il tuo turno!",
             "Clicca su una casella del settore avversario per sparare.",
@@ -676,7 +612,6 @@ function updateBattleStateFromFirebase(data) {
         );
     } else {
         ui.turn.textContent = "Avversario";
-
         setStatus(
             "Turno avversario",
             "L'avversario sta mirando...",
@@ -688,61 +623,44 @@ function updateBattleStateFromFirebase(data) {
 }
 
 function handlePlayerShot(r, c) {
-
     if (game.phase !== "battle") return;
 
     const roomRefPath = `battaglia_rooms/${game.roomCode}`;
 
     get(ref(db, roomRefPath)).then(snapshot => {
-
         const data = snapshot.val();
-
         if (!data || data.turn !== game.playerRole) return;
 
         const shotKey = key(r, c);
-
-        // Impedisce di sparare due volte nella stessa casella
         if (game.myShots.has(shotKey)) return;
 
         const opponentRole = game.playerRole === "p1" ? "p2" : "p1";
-
         const opponentShips = data[opponentRole]?.ships || [];
 
-        // Verifica se il colpo ha centrato una nave avversaria
         let hitShip = null;
-
         for (const ship of opponentShips) {
-
             if (ship.cells.some(([sr, sc]) => sr === r && sc === c)) {
                 hitShip = ship;
                 break;
             }
         }
 
-        // Aggiorna lo storico dei colpi
         game.myShots.add(shotKey);
-
         game.myShotResults[shotKey] = !!hitShip;
 
         game.playerShotCount = game.myShots.size;
-
         game.playerHitCount = Object.values(game.myShotResults)
             .filter(result => result === true).length;
 
         if (hitShip) {
-
             playSound("hit");
-
             setStatus(
                 "Colpo a segno!",
                 "Impatto confermato! Hai diritto a un altro tiro.",
                 "cyan"
             );
-
         } else {
-
             playSound("water");
-
             setStatus(
                 "Acqua!",
                 "Colpo in acqua. Turno dell'avversario.",
@@ -750,7 +668,6 @@ function handlePlayerShot(r, c) {
             );
         }
 
-        // Salva i colpi e i risultati sotto il giocatore che ha sparato
         const playerUpdate = update(
             ref(db, `${roomRefPath}/${game.playerRole}`),
             {
@@ -759,35 +676,18 @@ function handlePlayerShot(r, c) {
             }
         );
 
-        // Aggiorna il turno soltanto dopo aver salvato il colpo
         playerUpdate.then(() => {
-
-            const nextTurn = hitShip
-                ? game.playerRole
-                : opponentRole;
-
+            const nextTurn = hitShip ? game.playerRole : opponentRole;
             return set(ref(db, `${roomRefPath}/turn`), nextTurn);
-
         }).then(() => {
-
             renderBattleBoards();
-
         }).catch(error => {
-
             console.error("Errore durante il salvataggio del colpo:", error);
-
-            setStatus(
-                "Errore di connessione",
-                "Impossibile registrare il colpo su Firebase.",
-                "red"
-            );
-
+            setStatus("Errore di connessione", "Impossibile registrare il colpo su Firebase.", "red");
         });
 
     }).catch(error => {
-
         console.error("Errore nella lettura della stanza:", error);
-
     });
 }
 
@@ -832,130 +732,86 @@ function finishGame(playerWon) {
         : "La tua flotta è stata affondata dall'avversario.";
 
     playSound(playerWon ? "victory" : "defeat");
+
+    // Il Giocatore 1 pulisce ed elimina la stanza alla fine del match
+    if (game.playerRole === "p1" && game.roomCode) {
+        const roomRef = ref(db, `battaglia_rooms/${game.roomCode}`);
+        remove(roomRef).catch(err => console.error("Errore pulizia stanza:", err));
+    }
+
     setTimeout(() => ui.resultDialog.showModal(), 1000);
 }
 
 function renderBattleBoards() {
-
-    // ==========================================
     // TABELLONE PERSONALE
-    // ==========================================
-
     createBoard(ui.playerBoard, "player");
-
     const pBoard = ui.playerBoard.querySelector(".board");
 
-    // Visualizza le proprie navi
     game.playerShips.forEach(ship => {
-
         if (ship.cells.length) {
             addShipOverlay(pBoard, ship);
         }
-
     });
 
-    // Visualizza i colpi ricevuti dall'avversario
     for (let r = 0; r < SIZE; r++) {
-
         for (let c = 0; c < SIZE; c++) {
-
             const cell = getBoardCell(ui.playerBoard, r, c);
-
             const k = key(r, c);
-
             const ship = shipAt(game.playerShips, r, c);
 
             if (game.opponentShots.has(k)) {
-
                 if (ship) {
-
                     cell.classList.add("hit");
-
                     addFireOverlay(cell);
-
                 } else {
-
                     cell.classList.add("miss");
-
                 }
-
             }
-
         }
-
     }
 
-
-    // ==========================================
     // TABELLONE AVVERSARIO
-    // ==========================================
-
     createBoard(ui.enemyBoard, "enemy");
     const eBoard = ui.enemyBoard.querySelector(".board");
 
-    // Mostra soltanto le navi completamente affondate
     game.opponentShips.forEach(ship => {
-
         const isSunk = ship.cells.every(([r, c]) =>
             game.myShots.has(key(r, c))
         );
-
         if (isSunk) {
             addShipOverlay(eBoard, ship);
         }
-
     });
 
     for (let r = 0; r < SIZE; r++) {
-
         for (let c = 0; c < SIZE; c++) {
-
             const cell = getBoardCell(ui.enemyBoard, r, c);
-
             const k = key(r, c);
-
             const isShot = game.myShots.has(k);
 
             cell.disabled = game.phase !== "battle" || isShot;
 
             if (isShot) {
-
                 const wasHit = game.myShotResults[k] === true;
-
                 if (wasHit) {
-
                     cell.classList.add("hit");
-
                     addFireOverlay(cell);
-
                 } else {
-
                     cell.classList.add("miss");
-
                 }
-
             }
-
         }
-
     }
 
-
-    // ==========================================
     // STATISTICHE
-    // ==========================================
-
     ui.shots.textContent = game.playerShotCount;
-
     ui.hits.textContent = game.playerHitCount;
-
     ui.accuracy.textContent =
         `${game.playerShotCount
             ? Math.round(
                 (game.playerHitCount / game.playerShotCount) * 100
             )
             : 0}%`;
-
 }
 
 ui.rotate.addEventListener("click", () => {
