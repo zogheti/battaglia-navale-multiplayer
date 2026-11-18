@@ -4,9 +4,42 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#082d43">
-    <title>Battaglia Navale Multiplayer</title>
+    <title>Battaglia Navale Multiplayer & Single Player</title>
     <link rel="icon" type="image/png" href="assets/icons/icona.gif">
     <link rel="stylesheet" href="style.css">
+    <style>
+        .star-btn {
+            font-size: 54px;
+            line-height: 1;
+            background: rgba(11, 52, 73, 0.85);
+            border: 2px solid var(--line, #1c5b7d);
+            border-radius: 16px;
+            padding: 16px 20px;
+            cursor: pointer;
+            color: #e8bd68;
+            transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+            user-select: none;
+        }
+
+            .star-btn:hover:not(:disabled) {
+                transform: scale(1.12);
+                border-color: #e8bd68;
+                box-shadow: 0 0 18px rgba(232, 189, 104, 0.45);
+            }
+
+            .star-btn:disabled {
+                cursor: default;
+                opacity: 0.45;
+            }
+
+            .star-btn.chosen {
+                opacity: 1 !important;
+                border-color: #56d7e9;
+                background: rgba(20, 82, 112, 0.95);
+                box-shadow: 0 0 22px rgba(86, 215, 233, 0.6);
+                transform: scale(1.08);
+            }
+    </style>
 </head>
 <body>
     <main class="game-shell">
@@ -15,30 +48,56 @@
                 <h1>Battaglia <span>Navale</span></h1>
             </div>
             <div class="top-actions">
+                <button id="fullscreen-toggle" class="button button-quiet" type="button">⛶ Schermo intero</button>
                 <button id="sound-toggle" class="button button-quiet" type="button" aria-pressed="true">♫ Audio ON</button>
                 <button id="room-menu-btn" class="button button-quiet" type="button">Stanza</button>
             </div>
         </header>
 
-        <!-- SCHERMATA GESTIONE STANZA FIREBASE -->
-        <section id="room-panel" class="setup-panel">
-            <div class="setup-heading">
+        <!-- SCHERMATA GESTIONE STANZA / SELEZIONE MODALITÀ -->
+        <section id="room-panel" class="setup-panel" style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; width: 100%; padding: 20px;">
+
+            <div class="setup-heading" style="display: flex; flex-direction: column; align-items: center; text-align: center; max-width: 400px; width: 100%;">
                 <div>
-                    <p class="eyebrow">MULTIPLAYER ONLINE</p>
-                    <h2>Connessione Stanza</h2>
-                    <p>Inserisci un codice stanza (es. xy01) e condividilo con il tuo avversario per iniziare la sfida.</p>
+                    <p class="eyebrow">SCELTA MODALITÀ</p>
+                    <h2>Battaglia Navale</h2>
+                    <p>Scegli se sfidare un avversario online o giocare contro il computer.</p>
                 </div>
             </div>
-            <div style="display: flex; flex-direction: column; gap: 14px; max-width: 400px; margin: 10px 0 20px;">
-                <label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted);">
+
+            <!-- SELETTORE MODALITÀ -->
+            <div id="mode-selector" style="display: flex; flex-direction: column; gap: 10px; max-width: 400px; width: 100%; margin-bottom: 20px; align-items: center;">
+                <button id="btn-mode-single" class="button button-quiet" type="button" style="width: 100%;">Single Player</button>
+                <button id="btn-mode-multi" class="button button-primary" type="button" style="width: 100%;">Multiplayer Online</button>
+            </div>
+
+            <!-- PANNELLO MULTIPLAYER -->
+            <div id="multi-options" style="display: flex; flex-direction: column; gap: 14px; max-width: 400px; width: 100%; margin: 10px 0 20px; align-items: center;">
+                <label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); width: 100%; text-align: left;">
                     Codice Stanza
-                    <input type="text" id="room-code-input" placeholder="es. xy01" style="padding: 10px; border-radius: 8px; background: #0b3449; border: 1px solid var(--line); color: var(--text); font-size: 16px; font-weight: bold; text-transform: uppercase;">
+                    <input type="text" id="room-code-input" placeholder="es. xy01" style="padding: 10px; border-radius: 8px; background: #0b3449; border: 1px solid var(--line); color: var(--text); font-size: 16px; font-weight: bold; text-transform: uppercase; width: 100%; box-sizing: border-box;">
                 </label>
-                <div style="display: flex; gap: 10px;">
-                    <button id="join-room-btn" class="button button-primary" type="button" style="flex: 1;">Entra / Crea Stanza</button>
+                <div style="display: flex; gap: 10px; width: 100%;">
+                    <button id="join-room-btn" class="button button-primary" type="button" style="flex: 1; width: 100%;">Entra / Crea Stanza</button>
                 </div>
             </div>
-            <div id="room-status-box" style="color: var(--cyan); font-size: 13px; font-weight: bold;"></div>
+
+            <!-- PANNELLO SINGLE PLAYER -->
+            <div id="single-options" class="hidden" style="display: flex; flex-direction: column; gap: 14px; max-width: 400px; width: 100%; margin: 10px 0 20px; align-items: center;">
+                <label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); width: 100%; text-align: left;">
+                    Difficoltà CPU
+                    <select id="difficulty" style="padding: 10px; border-radius: 8px; background: #0b3449; border: 1px solid var(--line); color: var(--text); font-size: 14px; width: 100%; box-sizing: border-box;">
+                        <option value="easy">Facile</option>
+                        <option value="normal" selected>Normale</option>
+                        <option value="hard">Difficile</option>
+                    </select>
+                </label>
+                <div style="display: flex; gap: 10px; width: 100%;">
+                    <button id="start-single-btn" class="button button-primary" type="button" style="flex: 1; width: 100%;">Inizia Partita in Solitaria →</button>
+                </div>
+            </div>
+
+            <div id="room-status-box" style="color: var(--cyan); font-size: 13px; font-weight: bold; text-align: center;"></div>
         </section>
 
         <!-- SCHERMATA POSIZIONAMENTO (SETUP) -->
@@ -60,7 +119,7 @@
                 <div class="board-card setup-board-card">
                     <div class="board-title">
                         <div><span class="board-kicker">IL TUO SETTORE</span><h3>La mia flotta</h3></div>
-                        <span class="board-chip" id="placed-count">0 / 7 posizionate</span>
+                        <span class="board-chip" id="placed-count">0 / 8 posizionate</span>
                     </div>
                     <div id="setup-board" class="board-wrap"></div>
                     <p class="board-hint">Seleziona una nave nella lista, poi clicca la casella iniziale. Clicca una nave già posizionata per rimuoverla.</p>
@@ -68,7 +127,42 @@
             </div>
         </section>
 
-        <!-- SCHERMATA BATTAGLIA MULTIPLAYER -->
+        <!-- SCHERMATA INTERMEDIA: ASSEGNAZIONE GRADO (SOLO MULTIPLAYER) -->
+        <section id="rank-panel" class="setup-panel hidden" style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; width: 100%; padding: 28px 20px;">
+            <div class="setup-heading" style="display: flex; flex-direction: column; align-items: center; text-align: center; max-width: 600px; width: 100%; margin-bottom: 16px;">
+                <div>
+                    <p class="eyebrow">FASE 02 • ORDINE DI COMANDO</p>
+                    <h2>Clicca sulla stella e scopri il tuo grado</h2>
+                    <p>Scegli una delle cinque stelle: il comandante con il grado più alto aprirà il fuoco per primo.</p>
+                </div>
+            </div>
+
+            <!-- 5 STELLE GRANDI -->
+            <div id="stars-container" style="display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; margin: 16px 0 24px;">
+                <button type="button" class="star-btn" data-star="0" aria-label="Stella 1">★</button>
+                <button type="button" class="star-btn" data-star="1" aria-label="Stella 2">★</button>
+                <button type="button" class="star-btn" data-star="2" aria-label="Stella 3">★</button>
+                <button type="button" class="star-btn" data-star="3" aria-label="Stella 4">★</button>
+                <button type="button" class="star-btn" data-star="4" aria-label="Stella 5">★</button>
+            </div>
+
+            <!-- ESITO GRADI GIOCATORI -->
+            <div style="display: flex; flex-direction: column; gap: 10px; max-width: 480px; width: 100%; background: rgba(11, 52, 73, 0.65); border: 1px solid var(--line, #1c5b7d); border-radius: 12px; padding: 16px; margin-bottom: 20px;">
+                <p id="my-rank-text" style="font-size: 17px; font-weight: bold; color: #56d7e9; margin: 0;">
+                    Seleziona una stella per scoprire il tuo grado...
+                </p>
+                <p id="opponent-rank-text" style="font-size: 16px; font-weight: bold; color: #e8bd68; margin: 0;">
+                    In attesa che l'avversario scelga la sua stella...
+                </p>
+                <p id="rank-turn-announcement" style="font-size: 14px; color: var(--text); margin: 6px 0 0; min-height: 20px;"></p>
+            </div>
+
+            <button id="begin-battle-btn" class="button button-primary" type="button" disabled style="min-width: 240px; font-size: 16px; padding: 12px 24px;">
+                Inizia la Battaglia →
+            </button>
+        </section>
+
+        <!-- SCHERMATA BATTAGLIA -->
         <section id="battle-panel" class="battle-panel hidden">
             <div class="boards">
                 <article class="board-card">
@@ -92,18 +186,17 @@
                 <div class="status-copy">
                     <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
                         <strong id="status-title">In attesa</strong>
-                        <!-- TURNO SPOSTATO QUI -->
                         <span id="turn-count" style="font-family: 'Barlow Condensed', Impact, sans-serif; font-size: 16px; font-weight: 700; color: var(--cyan-soft); text-transform: uppercase; letter-spacing: 0.05em;">—</span>
                     </div>
                     <span id="status-message">Sincronizzazione in corso...</span>
                 </div>
-                <div class="status-stat"><span>Navi tue</span><strong id="player-ships-left">7</strong></div>
-                <div class="status-stat"><span>Navi avversarie</span><strong id="enemy-ships-left">7</strong></div>
+                <div class="status-stat"><span>Navi tue</span><strong id="player-ships-left">8</strong></div>
+                <div class="status-stat"><span>Navi avversarie</span><strong id="enemy-ships-left">8</strong></div>
             </section>
         </section>
 
         <footer class="footer">
-            <span>Operazione Mare Aperto - Multiplayer</span>
+            <span>Operazione Mare Aperto - Multiplayer & Single Player</span>
             <button id="rules-toggle" class="text-button" type="button">Regole del gioco</button>
         </footer>
     </main>
@@ -114,7 +207,7 @@
             <p class="eyebrow">MANUALE OPERATIVO</p>
             <h2>Regole del gioco</h2>
             <ul>
-                <li>Ogni flotta contiene 7 navi e occupa 17 caselle.</li>
+                <li>Ogni flotta contiene 8 navi e occupa 18 caselle.</li>
                 <li>Le navi possono essere orizzontali o verticali, anche sui bordi.</li>
                 <li>Tra due navi deve esserci almeno una casella libera, anche diagonalmente.</li>
                 <li>A turno, clicca sul tabellone avversario per sparare. Chi colpisce guadagna un tiro extra.</li>

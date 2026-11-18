@@ -1,4 +1,4 @@
-/* Battaglia Navale - Multiplayer Firebase (Modular SDK v10) */
+/* Battaglia Navale - Multiplayer & Single Player (Fix Completo) */
 "use strict";
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
@@ -26,7 +26,6 @@ const firebaseConfig = {
     appId: "1:788659808148:web:9d23a20f776eb1d6e99181"
 };
 
-// --- INIZIALIZZAZIONE FIREBASE ---
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
@@ -85,6 +84,8 @@ const ui = {
     autoPlace: $("auto-place"),
     start: $("start-game"),
     soundToggle: $("sound-toggle"),
+    fullscreenToggle: $("fullscreen-toggle"),
+    difficulty: $("difficulty"),
     turn: $("turn-count"),
     playerChip: $("player-board-chip"),
     enemyChip: $("enemy-board-chip"),
@@ -93,16 +94,36 @@ const ui = {
     resultDialog: $("result-dialog"),
     resultTitle: $("result-title"),
     resultMessage: $("result-message"),
-    playAgain: $("play-again")
+    playAgain: $("play-again"),
+    btnModeMulti: $("btn-mode-multi"),
+    btnModeSingle: $("btn-mode-single"),
+    multiOptions: $("multi-options"),
+    singleOptions: $("single-options"),
+    startSingleBtn: $("start-single-btn"),
+    rankPanel: $("rank-panel"),
+    starsContainer: $("stars-container"),
+    myRankText: $("my-rank-text"),
+    opponentRankText: $("opponent-rank-text"),
+    rankTurnAnnouncement: $("rank-turn-announcement"),
+    beginBattleBtn: $("begin-battle-btn"),
 };
 
-// ID univoco per identificare questo specifico browser/telefono nella stanza
+const RANKS = [
+    { name: "Ammiraglio", level: 5 },
+    { name: "Capitano", level: 4 },
+    { name: "Tenente", level: 3 },
+    { name: "Maresciallo", level: 2 },
+    { name: "Guardiamarina", level: 1 }
+];
+
 const MY_SESSION_ID = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
 const game = {
+    mode: "multi", // "multi" oppure "single"
     roomCode: null,
     playerRole: null,
     playerShips: [],
+    enemyShips: [],
     myShots: new Set(),
     opponentShots: new Set(),
     myShotResults: {},
@@ -110,11 +131,37 @@ const game = {
     orientation: "H",
     phase: "room",
     soundEnabled: true,
-    playerShotCount: 0,
-    playerHitCount: 0,
+    busy: false,
+    aiHitsInProgress: [],
+    aiTargetQueue: [],
     previewCells: [],
-    opponentShips: []
+    opponentShips: [],
+    shuffledRanks: [],
+    myRank: null,
+    myStarIndex: null,
+    battleStartedByMe: false,
 };
+
+// --- GESTIONE CAMBIO MODALITÀ (MULTI / SINGLE) ---
+if (ui.btnModeMulti && ui.btnModeSingle) {
+    ui.btnModeMulti.addEventListener("click", () => {
+        game.mode = "multi";
+        ui.btnModeMulti.className = "button button-primary";
+        ui.btnModeSingle.className = "button button-quiet";
+        if (ui.multiOptions) ui.multiOptions.classList.remove("hidden");
+        if (ui.singleOptions) ui.singleOptions.classList.add("hidden");
+        if (ui.roomStatusBox) ui.roomStatusBox.textContent = "";
+    });
+
+    ui.btnModeSingle.addEventListener("click", () => {
+        game.mode = "single";
+        ui.btnModeSingle.className = "button button-primary";
+        ui.btnModeMulti.className = "button button-quiet";
+        if (ui.singleOptions) ui.singleOptions.classList.remove("hidden");
+        if (ui.multiOptions) ui.multiOptions.classList.add("hidden");
+        if (ui.roomStatusBox) ui.roomStatusBox.textContent = "";
+    });
+}
 
 function makeFleet() {
     const fleet = [];
@@ -127,7 +174,7 @@ function makeFleet() {
                 label: type.label,
                 image: type.image,
                 cells: [],
-                hits: [],
+                hits: new Set(),
                 sunk: false
             });
         }
@@ -164,7 +211,7 @@ function playSound(name) {
     if (!game.soundEnabled) return;
     const audio = new Audio(SOUND_FILES[name]);
     audio.volume = 0.45;
-    audio.play().catch(() => { });
+    audio.play().catch(e => console.log("Audio non riprodotto (interazione richiesta):", e));
 }
 
 function shipImage(ship, className = "ship-image") {
@@ -211,7 +258,8 @@ function placeShip(ship, r, c, dir, ships) {
     const cells = getPlacementCells(r, c, ship.length, dir);
     if (!isPlacementValid(cells, ships, ship.id)) return false;
     ship.cells = cells;
-    ship.hits = [];
+    if (ship.hits instanceof Set) ship.hits.clear();
+    else ship.hits = [];
     ship.sunk = false;
     return true;
 }
@@ -220,7 +268,8 @@ function randomPlacement(ships) {
     const ordered = [...ships].sort((a, b) => b.length - a.length);
     ordered.forEach(ship => {
         ship.cells = [];
-        ship.hits = [];
+        if (ship.hits instanceof Set) ship.hits.clear();
+        else ship.hits = [];
         ship.sunk = false;
     });
 
@@ -238,6 +287,7 @@ function randomPlacement(ships) {
 }
 
 function createBoard(container, boardType) {
+    if (!container) return;
     container.innerHTML = "";
     const board = document.createElement("div");
     board.className = "board";
@@ -275,7 +325,7 @@ function createBoard(container, boardType) {
                 cell.addEventListener("blur", clearPreview);
                 cell.addEventListener("click", () => handleSetupCell(r, c));
             } else if (boardType === "enemy") {
-                cell.addEventListener("click", () => handlePlayerShot(r, c));
+                cell.addEventListener("click", () => handleShotRouter(r, c));
             }
             board.appendChild(cell);
         }
@@ -283,9 +333,10 @@ function createBoard(container, boardType) {
     container.appendChild(board);
 }
 
-const getBoardCell = (container, r, c) => container.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
+const getBoardCell = (container, r, c) => container ? container.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`) : null;
 
 function renderFleetList() {
+    if (!ui.fleetList) return;
     ui.fleetList.innerHTML = "";
     game.playerShips.forEach(ship => {
         const button = document.createElement("button");
@@ -323,7 +374,7 @@ function renderFleetList() {
 }
 
 function addShipOverlay(board, ship) {
-    if (!ship.cells.length) return;
+    if (!board || !ship.cells.length) return;
     const [startR, startC] = ship.cells[0];
     const [endR, endC] = ship.cells[ship.cells.length - 1];
 
@@ -369,7 +420,7 @@ function addShipOverlay(board, ship) {
 }
 
 function addFireOverlay(cell) {
-    if (cell.querySelector(".fire-overlay")) return;
+    if (!cell || cell.querySelector(".fire-overlay")) return;
     const fireImg = document.createElement("img");
     fireImg.src = "assets/ships/fuoco.gif";
     fireImg.className = "fire-overlay";
@@ -387,8 +438,10 @@ function addFireOverlay(cell) {
 }
 
 function renderSetupBoard() {
+    if (!ui.setupBoard) return;
     createBoard(ui.setupBoard, "setup");
     const board = ui.setupBoard.querySelector(".board");
+    if (!board) return;
 
     board.querySelectorAll(".cell").forEach(cell => {
         const r = Number(cell.dataset.r);
@@ -402,8 +455,8 @@ function renderSetupBoard() {
     });
 
     const placedCount = game.playerShips.filter(s => s.cells.length).length;
-    ui.placedCount.textContent = `${placedCount} / ${game.playerShips.length} posizionate`;
-    ui.start.disabled = game.playerShips.some(s => !s.cells.length);
+    if (ui.placedCount) ui.placedCount.textContent = `${placedCount} / ${game.playerShips.length} posizionate`;
+    if (ui.start) ui.start.disabled = game.playerShips.some(s => !s.cells.length);
     renderFleetList();
 }
 
@@ -440,7 +493,8 @@ function handleSetupCell(r, c) {
     const existing = shipAt(game.playerShips, r, c);
     if (existing) {
         existing.cells = [];
-        existing.hits = [];
+        if (existing.hits instanceof Set) existing.hits.clear();
+        else existing.hits = [];
         existing.sunk = false;
         game.selectedShipId = existing.id;
         playSound("click");
@@ -469,94 +523,109 @@ function autoPlacePlayer() {
     renderSetupBoard();
 }
 
-// --- LOGICA MULTIPLAYER FIREBASE (MODULAR) ---
+// --- GESTIONE ACCESSO STANZA / SINGLE PLAYER ---
 
-ui.joinRoomBtn.addEventListener("click", () => {
-    const code = ui.roomCodeInput.value.trim().toUpperCase();
-    if (!code) {
-        alert("Inserisci un codice stanza valido!");
-        return;
-    }
-    connectToRoom(code);
-});
-
-async function connectToRoom(code) {
-    const roomRefPath = `battaglia_rooms/${code}`;
-    const roomRef = ref(db, roomRefPath);
-    ui.roomStatusBox.textContent = "Connessione alla stanza in corso...";
-
-    try {
-        const txResult = await runTransaction(roomRef, (current) => {
-            // Se la stanza non esiste, o se entrambi sono offline, la inizializziamo da zero
-            const p1Online = current?.p1?.connected === true;
-            const p2Online = current?.p2?.connected === true;
-
-            if (current === null || (!p1Online && !p2Online)) {
-                return {
-                    p1: { connected: true, ready: false, sessionId: MY_SESSION_ID },
-                    p2: { connected: false, ready: false, sessionId: null },
-                    turn: null
-                };
-            }
-
-            // Se P1 è libero (o siamo già noi)
-            if (!p1Online || current.p1?.sessionId === MY_SESSION_ID) {
-                current.p1 = { connected: true, ready: false, sessionId: MY_SESSION_ID };
-                return current;
-            }
-
-            // Se P2 è libero (o siamo già noi)
-            if (!p2Online || current.p2?.sessionId === MY_SESSION_ID) {
-                current.p2 = { connected: true, ready: false, sessionId: MY_SESSION_ID };
-                return current;
-            }
-
-            // Stanza piena
-            return;
-        });
-
-        if (!txResult.committed) {
-            ui.roomStatusBox.textContent = "Stanza piena! Entrambi i giocatori sono già presenti.";
+if (ui.joinRoomBtn) {
+    ui.joinRoomBtn.addEventListener("click", () => {
+        const code = ui.roomCodeInput.value.trim().toUpperCase();
+        if (!code) {
+            alert("Inserisci un codice stanza valido!");
             return;
         }
+        game.mode = "multi";
+        connectToRoom(code);
+    });
+}
 
-        const roomData = txResult.snapshot.val();
-        if (roomData?.p1?.sessionId === MY_SESSION_ID) {
-            game.playerRole = "p1";
-        } else if (roomData?.p2?.sessionId === MY_SESSION_ID) {
-            game.playerRole = "p2";
-        } else {
-            ui.roomStatusBox.textContent = "Errore nell'assegnazione del ruolo. Riprova.";
-            return;
-        }
-
-        game.roomCode = code;
-
-        // Disconnessione automatica se si chiude il browser/scheda
-        const playerRef = ref(db, `${roomRefPath}/${game.playerRole}`);
-        onDisconnect(playerRef).update({ connected: false, ready: false });
-
-        ui.roomPanel.classList.add("hidden");
-        ui.setupPanel.classList.remove("hidden");
+if (ui.startSingleBtn) {
+    ui.startSingleBtn.addEventListener("click", () => {
+        game.mode = "single";
+        if (ui.roomPanel) ui.roomPanel.classList.add("hidden");
+        if (ui.setupPanel) ui.setupPanel.classList.remove("hidden");
         game.phase = "setup";
         game.playerShips = makeFleet();
         game.selectedShipId = game.playerShips[0].id;
-
         renderSetupBoard();
-        setStatus("Schiera la tua flotta", `Connesso come Giocatore ${game.playerRole === "p1" ? "1" : "2"}.`);
-        ui.roomStatusBox.textContent = `Connesso correttamente come ${game.playerRole.toUpperCase()}.`;
+        setStatus("Schiera la tua flotta", "Modalità Singolo Giocatore - Posiziona le tue navi.");
+    });
+}
 
-        initFirebaseListeners(roomRefPath);
+if (ui.start) {
+    ui.start.addEventListener("click", () => {
+        if (game.playerShips.some(s => !s.cells.length)) return;
 
-    } catch (error) {
-        console.error("Errore connessione Firebase:", error);
-        ui.roomStatusBox.textContent = "Errore durante la connessione alla stanza.";
+        if (game.mode === "single") {
+            startSinglePlayerGame();
+        } else {
+            startMultiplayerGame();
+        }
+    });
+}
+
+function shuffleRanks() {
+    const copy = [...RANKS];
+    for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+}
+
+function setupRankScreen() {
+    game.shuffledRanks = shuffleRanks();
+    game.myRank = null;
+    game.myStarIndex = null;
+    game.battleStartedByMe = false;
+
+    if (ui.myRankText) ui.myRankText.textContent = "Seleziona una stella per scoprire il tuo grado...";
+    if (ui.opponentRankText) ui.opponentRankText.textContent = "In attesa che l'avversario scelga la sua stella...";
+    if (ui.rankTurnAnnouncement) ui.rankTurnAnnouncement.textContent = "";
+    if (ui.beginBattleBtn) {
+        ui.beginBattleBtn.disabled = true;
+        ui.beginBattleBtn.textContent = "Inizia la Battaglia →";
+    }
+
+    if (ui.starsContainer) {
+        const stars = ui.starsContainer.querySelectorAll(".star-btn");
+        stars.forEach((btn, idx) => {
+            btn.disabled = false;
+            btn.classList.remove("chosen");
+            btn.textContent = "★";
+            btn.title = "Clicca per scoprire il tuo grado";
+            btn.onclick = () => handleStarSelection(idx);
+        });
     }
 }
 
-ui.start.addEventListener("click", () => {
-    if (game.playerShips.some(s => !s.cells.length)) return;
+function handleStarSelection(starIndex) {
+    if (game.myRank || !game.roomCode || !game.playerRole) return;
 
+    const chosenRank = game.shuffledRanks[starIndex];
+    game.myRank = chosenRank;
+    game.myStarIndex = starIndex;
+    playSound("click");
+
+    if (ui.starsContainer) {
+        const stars = ui.starsContainer.querySelectorAll(".star-btn");
+        stars.forEach((btn, idx) => {
+            btn.disabled = true;
+            if (idx === starIndex) {
+                btn.classList.add("chosen");
+                btn.innerHTML = `★<div style="font-size: 13px; margin-top: 6px; color: #fff;">${chosenRank.name}</div>`;
+            }
+        });
+    }
+
+    if (ui.myRankText) {
+        ui.myRankText.textContent = `Tu giochi con il grado di ${chosenRank.name}`;
+    }
+
+    update(ref(db, `battaglia_rooms/${game.roomCode}/${game.playerRole}`), {
+        rank: chosenRank
+    }).catch(err => console.error("Errore salvataggio grado:", err));
+}
+
+function startMultiplayerGame() {
     const serializedShips = game.playerShips.map(s => ({
         id: s.id,
         length: s.length,
@@ -567,39 +636,403 @@ ui.start.addEventListener("click", () => {
     update(ref(db, `battaglia_rooms/${game.roomCode}/${game.playerRole}`), {
         connected: true,
         ready: true,
+        battleReady: false,
+        rank: null,
         ships: serializedShips
     }).then(() => {
-        game.phase = "waiting_opponent";
-        ui.setupPanel.classList.add("hidden");
-        ui.battlePanel.classList.remove("hidden");
-        if (ui.turn) ui.turn.textContent = "In attesa";
-        setStatus("In attesa dell'avversario", "Hai schierato la flotta. Aspettando che l'altro giocatore sia pronto...");
+        game.phase = "rank_selection";
+        setupRankScreen();
+        if (ui.setupPanel) ui.setupPanel.classList.add("hidden");
+        if (ui.rankPanel) ui.rankPanel.classList.remove("hidden");
         playSound("inizio");
-        renderBattleBoards();
     }).catch(err => {
         console.error("Errore invio flotta:", err);
-        alert("Errore di rete durante l'invio della flotta. Riprova.");
     });
-});
+}
+
+if (ui.beginBattleBtn) {
+    ui.beginBattleBtn.addEventListener("click", () => {
+        if (!game.roomCode || !game.playerRole || game.battleStartedByMe) return;
+        game.battleStartedByMe = true;
+        playSound("click");
+        ui.beginBattleBtn.disabled = true;
+        ui.beginBattleBtn.textContent = "In attesa dell'avversario...";
+
+        update(ref(db, `battaglia_rooms/${game.roomCode}/${game.playerRole}`), {
+            battleReady: true
+        }).catch(err => console.error("Errore conferma avvio battaglia:", err));
+    });
+}
+
+function startSinglePlayerGame() {
+    game.enemyShips = makeFleet();
+    if (!randomPlacement(game.enemyShips)) {
+        setStatus("Errore", "Impossibile preparare la flotta nemica.", "red");
+        return;
+    }
+
+    game.phase = "battle";
+    game.busy = false;
+    game.myShots.clear();
+    game.opponentShots.clear();
+    game.aiHitsInProgress = [];
+    game.aiTargetQueue = [];
+
+    if (ui.setupPanel) ui.setupPanel.classList.add("hidden");
+    if (ui.battlePanel) ui.battlePanel.classList.remove("hidden");
+    if (ui.playerChip) ui.playerChip.textContent = "In difesa";
+    if (ui.enemyChip) ui.enemyChip.textContent = "Bersagli nascosti";
+
+    renderBattleBoards();
+    setStatus("Battaglia Iniziata", "Seleziona una casella nemica per sparare.", "cyan");
+    playSound("inizio");
+}
+
+// --- ROUTER DEI COLPI ---
+
+function handleShotRouter(r, c) {
+    if (game.mode === "single") {
+        handleSinglePlayerShot(r, c);
+    } else {
+        handleMultiplayerShot(r, c);
+    }
+}
+
+// --- LOGICA SINGLE PLAYER (IA) ---
+
+function handleSinglePlayerShot(r, c) {
+    if (game.phase !== "battle" || game.busy || game.myShots.has(key(r, c))) return;
+
+    const k = key(r, c);
+    game.myShots.add(k);
+    playSound("shot");
+
+    const ship = shipAt(game.enemyShips, r, c);
+    if (ship) {
+        if (ship.hits instanceof Set) ship.hits.add(k);
+        else ship.hits.push(k);
+        playSound("hit");
+
+        const targetCell = getBoardCell(ui.enemyBoard, r, c);
+        if (targetCell) addFireOverlay(targetCell);
+
+        const currentHitsCount = ship.hits instanceof Set ? ship.hits.size : ship.hits.length;
+        if (currentHitsCount === ship.length) {
+            ship.sunk = true;
+            playSound("sinking");
+            setStatus("Nave nemica affondata!", `Hai affondato ${ship.label}. Tiri ancora!`, "cyan");
+        } else {
+            setStatus("Colpo a segno!", `Impatto confermato in ${cellLabel(r, c)}. Tiri ancora!`, "cyan");
+        }
+
+        renderBattleBoards();
+
+        if (game.enemyShips.every(s => s.sunk)) {
+            finishGameSingle(true);
+            return;
+        }
+        game.busy = false;
+        return;
+    } else {
+        playSound("water");
+        setStatus("Acqua!", `Il colpo in ${cellLabel(r, c)} è in acqua. Turno del computer.`, "gold");
+        game.busy = true;
+        renderBattleBoards();
+        window.setTimeout(computerTurn, 750);
+    }
+}
+
+function computerTurn() {
+    if (game.phase !== "battle") return;
+
+    const target = getAiTarget();
+    if (!target) {
+        game.busy = false;
+        return;
+    }
+
+    const [r, c] = target;
+    const k = key(r, c);
+    game.opponentShots.add(k);
+    playSound("shot");
+
+    const ship = shipAt(game.playerShips, r, c);
+    if (ship) {
+        if (ship.hits instanceof Set) ship.hits.add(k);
+        else ship.hits.push(k);
+        playSound("hit");
+        game.aiHitsInProgress.push([r, c]);
+
+        const targetCell = getBoardCell(ui.playerBoard, r, c);
+        if (targetCell) addFireOverlay(targetCell);
+
+        const currentHitsCount = ship.hits instanceof Set ? ship.hits.size : ship.hits.length;
+        if (currentHitsCount === ship.length) {
+            ship.sunk = true;
+            playSound("sinking");
+            game.aiHitsInProgress = [];
+            game.aiTargetQueue = [];
+            setStatus("Nave affondata!", `Il computer ha distrutto la tua nave in ${cellLabel(r, c)}.`, "red");
+        }
+
+        renderBattleBoards();
+
+        if (game.playerShips.every(s => s.sunk)) {
+            finishGameSingle(false);
+            return;
+        }
+
+        window.setTimeout(computerTurn, 750);
+    } else {
+        playSound("water");
+        setStatus("Il computer ha mancato", `Il colpo nemico in ${cellLabel(r, c)} è in acqua. Tocca a te!`, "cyan");
+        game.busy = false;
+        renderBattleBoards();
+        if (ui.turn) ui.turn.textContent = "Tuo turno";
+    }
+}
+
+function getAvailableTargets() {
+    const available = [];
+    const diff = ui.difficulty ? ui.difficulty.value : "normal";
+    const forbiddenNearSunk = new Set();
+
+    if (diff !== "easy") {
+        game.playerShips.forEach(ship => {
+            if (ship.sunk) {
+                ship.cells.forEach(([sr, sc]) => {
+                    for (let dr = -1; dr <= 1; dr++) {
+                        for (let dc = -1; dc <= 1; dc++) {
+                            const rr = sr + dr;
+                            const cc = sc + dc;
+                            if (inBounds(rr, cc)) forbiddenNearSunk.add(key(rr, cc));
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    for (let r = 0; r < SIZE; r++) {
+        for (let c = 0; c < SIZE; c++) {
+            const k = key(r, c);
+            if (!game.opponentShots.has(k) && !forbiddenNearSunk.has(k)) {
+                available.push([r, c]);
+            }
+        }
+    }
+    if (available.length === 0) {
+        for (let r = 0; r < SIZE; r++) {
+            for (let c = 0; c < SIZE; c++) {
+                if (!game.opponentShots.has(key(r, c))) available.push([r, c]);
+            }
+        }
+    }
+    return available;
+}
+
+function getTargetFromHitsInProgress() {
+    const availableKeys = new Set(getAvailableTargets().map(([r, c]) => key(r, c)));
+    if (game.aiHitsInProgress.length > 1) {
+        game.aiTargetQueue = [];
+        const rows = game.aiHitsInProgress.map(p => p[0]);
+        const cols = game.aiHitsInProgress.map(p => p[1]);
+        const horizontal = rows.every(r => r === rows[0]);
+        const vertical = cols.every(c => c === cols[0]);
+        const candidates = [];
+
+        if (horizontal) {
+            const row = rows[0];
+            candidates.push([row, Math.min(...cols) - 1], [row, Math.max(...cols) + 1]);
+        } else if (vertical) {
+            const col = cols[0];
+            candidates.push([Math.min(...rows) - 1, col], [Math.max(...rows) + 1, col]);
+        }
+
+        for (const [r, c] of candidates) {
+            if (inBounds(r, c) && availableKeys.has(key(r, c))) return [r, c];
+        }
+    }
+
+    while (game.aiTargetQueue.length) {
+        const target = game.aiTargetQueue.shift();
+        if (availableKeys.has(key(target[0], target[1]))) return target;
+    }
+
+    if (game.aiHitsInProgress.length === 1) {
+        const [r, c] = game.aiHitsInProgress[0];
+        [[r - 1, c], [r + 1, c], [r, c - 1], [r, c + 1]].forEach(([cr, cc]) => {
+            if (inBounds(cr, cc) && availableKeys.has(key(cr, cc))) game.aiTargetQueue.push([cr, cc]);
+        });
+        if (game.aiTargetQueue.length) return game.aiTargetQueue.shift();
+    }
+    return null;
+}
+
+function getAiTarget() {
+    const diff = ui.difficulty ? ui.difficulty.value : "normal";
+    const huntTarget = getTargetFromHitsInProgress();
+    if (huntTarget) return huntTarget;
+
+    const available = getAvailableTargets();
+    if (!available.length) return null;
+
+    if (diff === "normal" || diff === "hard") {
+        const checkerboard = available.filter(([r, c]) => (r + c) % 2 === 0);
+        const pool = checkerboard.length ? checkerboard : available;
+        return pool[Math.floor(Math.random() * pool.length)];
+    }
+    return available[Math.floor(Math.random() * available.length)];
+}
+
+function finishGameSingle(playerWon) {
+    game.phase = "finished";
+    game.busy = false;
+    if (ui.resultTitle) ui.resultTitle.textContent = playerWon ? "Vittoria!" : "Sconfitta";
+    if (ui.resultMessage) ui.resultMessage.textContent = playerWon ? "Hai distrutto la flotta del computer!" : "La tua flotta è stata distrutta.";
+    playSound(playerWon ? "victory" : "defeat");
+    setTimeout(() => { if (ui.resultDialog) ui.resultDialog.showModal(); }, 1000);
+}
+
+// --- LOGICA MULTIPLAYER FIREBASE ---
+
+async function connectToRoom(code) {
+    const roomRefPath = `battaglia_rooms/${code}`;
+    const roomRef = ref(db, roomRefPath);
+    if (ui.roomStatusBox) ui.roomStatusBox.textContent = "Connessione alla stanza in corso...";
+
+    try {
+        const txResult = await runTransaction(roomRef, (current) => {
+            const p1Online = current?.p1?.connected === true;
+            const p2Online = current?.p2?.connected === true;
+
+            if (current === null || (!p1Online && !p2Online)) {
+                return {
+                    p1: { connected: true, ready: false, sessionId: MY_SESSION_ID },
+                    p2: { connected: false, ready: false, sessionId: null },
+                    turn: null
+                };
+            }
+            if (!p1Online || current.p1?.sessionId === MY_SESSION_ID) {
+                current.p1 = { connected: true, ready: false, sessionId: MY_SESSION_ID };
+                return current;
+            }
+            if (!p2Online || current.p2?.sessionId === MY_SESSION_ID) {
+                current.p2 = { connected: true, ready: false, sessionId: MY_SESSION_ID };
+                return current;
+            }
+            return;
+        });
+
+        if (!txResult.committed) {
+            if (ui.roomStatusBox) ui.roomStatusBox.textContent = "Stanza piena! Entrambi i giocatori sono già presenti.";
+            return;
+        }
+
+        const roomData = txResult.snapshot.val();
+        if (roomData?.p1?.sessionId === MY_SESSION_ID) game.playerRole = "p1";
+        else if (roomData?.p2?.sessionId === MY_SESSION_ID) game.playerRole = "p2";
+
+        game.roomCode = code;
+        onDisconnect(ref(db, `${roomRefPath}/${game.playerRole}`)).update({ connected: false, ready: false });
+
+        if (ui.roomPanel) ui.roomPanel.classList.add("hidden");
+        if (ui.setupPanel) ui.setupPanel.classList.remove("hidden");
+        game.phase = "setup";
+        game.playerShips = makeFleet();
+        game.selectedShipId = game.playerShips[0].id;
+
+        renderSetupBoard();
+        setStatus("Schiera la tua flotta", `Connesso come Giocatore ${game.playerRole === "p1" ? "1" : "2"}.`);
+        if (ui.roomStatusBox) ui.roomStatusBox.textContent = `Connesso correttamente come ${game.playerRole.toUpperCase()}.`;
+
+        initFirebaseListeners(roomRefPath);
+    } catch (error) {
+        console.error("Errore connessione:", error);
+    }
+}
 
 function initFirebaseListeners(roomRefPath) {
     onValue(ref(db, roomRefPath), snapshot => {
+        if (game.mode !== "multi") return;
         const data = snapshot.val();
         if (!data) return;
 
-        const p1 = data.p1;
-        const p2 = data.p2;
+        const p1 = data.p1 || {};
+        const p2 = data.p2 || {};
+        const myData = data[game.playerRole] || {};
+        const opponentRole = game.playerRole === "p1" ? "p2" : "p1";
+        const opponentData = data[opponentRole] || {};
 
-        const bothReady = p1 && p2 && p1.ready === true && p2.ready === true;
-
-        if (bothReady && (game.phase === "waiting_opponent" || game.phase === "setup")) {
-            game.phase = "battle";
-            if (game.playerRole === "p1" && !data.turn) {
-                set(ref(db, `${roomRefPath}/turn`), "p1").catch(err => console.error("Errore turno:", err));
+        // FASE INTERMEDIA: SCELTA DEL GRADO CON LE 5 STELLE
+        if (game.phase === "rank_selection") {
+            if (myData.rank && ui.myRankText) {
+                ui.myRankText.textContent = `Tu giochi con il grado di ${myData.rank.name}`;
             }
+
+            if (opponentData.rank) {
+                if (ui.opponentRankText) {
+                    ui.opponentRankText.textContent = `L'avversario gioca con il grado di ${opponentData.rank.name}`;
+                }
+            } else {
+                if (ui.opponentRankText) {
+                    ui.opponentRankText.textContent = "In attesa che l'avversario scelga la sua stella...";
+                }
+            }
+
+            // Entrambi hanno scelto la stella e schierato le navi
+            if (p1.ready && p2.ready && p1.rank && p2.rank) {
+                let firstTurn = "p1";
+                if (p2.rank.level > p1.rank.level) {
+                    firstTurn = "p2";
+                } else if (p1.rank.level > p2.rank.level) {
+                    firstTurn = "p1";
+                } else {
+                    // In caso di grado identico, inizia Giocatore 1
+                    firstTurn = "p1";
+                }
+
+                // Il Giocatore 1 scrive in modo univoco chi inizia per primo su Firebase
+                if (game.playerRole === "p1" && !data.turn) {
+                    set(ref(db, `${roomRefPath}/turn`), firstTurn);
+                }
+
+                const iAmFirst = firstTurn === game.playerRole;
+                const highestRankName = firstTurn === "p1" ? p1.rank.name : p2.rank.name;
+
+                if (ui.rankTurnAnnouncement) {
+                    if (p1.rank.level === p2.rank.level) {
+                        ui.rankTurnAnnouncement.textContent = iAmFirst
+                            ? `Pari grado (${highestRankName})! Giochi per primo tu.`
+                            : `Pari grado (${highestRankName})! Gioca per primo l'avversario.`;
+                    } else {
+                        ui.rankTurnAnnouncement.textContent = iAmFirst
+                            ? `${highestRankName} è il più alto in grado: giocherai per primo!`
+                            : `${highestRankName} è il più alto in grado: giocherà per primo l'avversario!`;
+                    }
+                }
+
+                if (ui.beginBattleBtn && !game.battleStartedByMe) {
+                    ui.beginBattleBtn.disabled = false;
+                }
+            } else if (myData.rank && (!p2.ready || !p1.ready)) {
+                if (ui.rankTurnAnnouncement) {
+                    ui.rankTurnAnnouncement.textContent = "In attesa che l'avversario completi il posizionamento delle navi...";
+                }
+            }
+
+            // Quando entrambi cliccano "Inizia la Battaglia" (o l'avversario ha già cliccato e noi anche)
+            if (p1.battleReady && p2.battleReady && data.turn) {
+                game.phase = "battle";
+                if (ui.rankPanel) ui.rankPanel.classList.add("hidden");
+                if (ui.battlePanel) ui.battlePanel.classList.remove("hidden");
+                playSound("inizio");
+                updateBattleStateFromFirebase(data);
+            }
+            return;
         }
 
-        if (game.phase === "battle" || game.phase === "waiting_opponent") {
+        if (game.phase === "battle") {
             updateBattleStateFromFirebase(data);
         }
     });
@@ -607,7 +1040,6 @@ function initFirebaseListeners(roomRefPath) {
 
 function updateBattleStateFromFirebase(data) {
     const opponentRole = game.playerRole === "p1" ? "p2" : "p1";
-
     const myData = data[game.playerRole] || {};
     const opponentData = data[opponentRole] || {};
     game.opponentShips = opponentData.ships || [];
@@ -616,46 +1048,20 @@ function updateBattleStateFromFirebase(data) {
     game.myShotResults = myData.shotResults || {};
     game.opponentShots = new Set(opponentData.shotsFired || []);
 
-    game.playerShotCount = game.myShots.size;
-    game.playerHitCount = Object.values(game.myShotResults)
-        .filter(result => result === true).length;
-
     renderBattleBoards();
 
-    if (game.phase === "waiting_opponent") {
-        if (ui.turn) ui.turn.textContent = "In attesa";
-        setStatus(
-            "In attesa dell'avversario",
-            "Hai schierato la flotta. Aspettando che l'altro giocatore sia pronto...",
-            "gold"
-        );
-        return;
-    }
-
-    const currentTurn = data.turn;
-
-    if (currentTurn === game.playerRole) {
+    if (data.turn === game.playerRole) {
         if (ui.turn) ui.turn.textContent = "Tuo turno";
-        setStatus(
-            "È il tuo turno!",
-            "Clicca su una casella del settore avversario per sparare.",
-            "cyan"
-        );
+        setStatus("È il tuo turno!", "Clicca sul settore avversario per fare fuoco.", "cyan");
     } else {
         if (ui.turn) ui.turn.textContent = "Turno avversario";
-        setStatus(
-            "Turno avversario",
-            "L'avversario sta mirando...",
-            "gold"
-        );
+        setStatus("Turno avversario", "L'avversario sta mirando...", "gold");
     }
-
-    checkWinConditions(data);
+    checkWinConditionsMulti(data);
 }
 
-function handlePlayerShot(r, c) {
+function handleMultiplayerShot(r, c) {
     if (game.phase !== "battle") return;
-
     const roomRefPath = `battaglia_rooms/${game.roomCode}`;
 
     get(ref(db, roomRefPath)).then(snapshot => {
@@ -679,50 +1085,20 @@ function handlePlayerShot(r, c) {
         game.myShots.add(shotKey);
         game.myShotResults[shotKey] = !!hitShip;
 
-        game.playerShotCount = game.myShots.size;
-        game.playerHitCount = Object.values(game.myShotResults)
-            .filter(result => result === true).length;
+        if (hitShip) playSound("hit");
+        else playSound("water");
 
-        if (hitShip) {
-            playSound("hit");
-            setStatus(
-                "Colpo a segno!",
-                "Impatto confermato! Hai diritto a un altro tiro.",
-                "cyan"
-            );
-        } else {
-            playSound("water");
-            setStatus(
-                "Acqua!",
-                "Colpo in acqua. Turno dell'avversario.",
-                "gold"
-            );
-        }
-
-        const playerUpdate = update(
-            ref(db, `${roomRefPath}/${game.playerRole}`),
-            {
-                shotsFired: Array.from(game.myShots),
-                shotResults: game.myShotResults
-            }
-        );
-
-        playerUpdate.then(() => {
+        update(ref(db, `${roomRefPath}/${game.playerRole}`), {
+            shotsFired: Array.from(game.myShots),
+            shotResults: game.myShotResults
+        }).then(() => {
             const nextTurn = hitShip ? game.playerRole : opponentRole;
             return set(ref(db, `${roomRefPath}/turn`), nextTurn);
-        }).then(() => {
-            renderBattleBoards();
-        }).catch(error => {
-            console.error("Errore durante il salvataggio del colpo:", error);
-            setStatus("Errore di connessione", "Impossibile registrare il colpo su Firebase.", "red");
         });
-
-    }).catch(error => {
-        console.error("Errore nella lettura della stanza:", error);
     });
 }
 
-function checkWinConditions(data) {
+function checkWinConditionsMulti(data) {
     if (game.phase !== "battle") return;
     const opponentRole = game.playerRole === "p1" ? "p2" : "p1";
     const myData = data[game.playerRole] || {};
@@ -733,66 +1109,49 @@ function checkWinConditions(data) {
     const myShotsSet = new Set(myData.shotsFired || []);
     const opponentShotsSet = new Set(opponentData.shotsFired || []);
 
-    let enemySunkCount = 0;
-    opponentShips.forEach(ship => {
-        const allHit = ship.cells.every(([r, c]) => myShotsSet.has(key(r, c)));
-        if (allHit && ship.cells.length > 0) enemySunkCount++;
-    });
-
-    let mySunkCount = 0;
-    myShips.forEach(ship => {
-        const allHit = ship.cells.every(([r, c]) => opponentShotsSet.has(key(r, c)));
-        if (allHit) mySunkCount++;
-    });
+    let enemySunkCount = opponentShips.filter(s => s.cells.every(([r, c]) => myShotsSet.has(key(r, c)))).length;
+    let mySunkCount = myShips.filter(s => s.cells.every(([r, c]) => opponentShotsSet.has(key(r, c)))).length;
 
     if (ui.playerShipsLeft) ui.playerShipsLeft.textContent = myShips.length - mySunkCount;
     if (ui.enemyShipsLeft) ui.enemyShipsLeft.textContent = opponentShips.length - enemySunkCount;
 
-    if (enemySunkCount === opponentShips.length && opponentShips.length > 0) {
-        finishGame(true);
-    } else if (mySunkCount === myShips.length && myShips.length > 0) {
-        finishGame(false);
-    }
+    if (enemySunkCount === opponentShips.length && opponentShips.length > 0) finishGameMulti(true);
+    else if (mySunkCount === myShips.length && myShips.length > 0) finishGameMulti(false);
 }
 
-function finishGame(playerWon) {
+function finishGameMulti(playerWon) {
     game.phase = "finished";
-    ui.resultTitle.textContent = playerWon ? "Vittoria!" : "Sconfitta";
-    ui.resultMessage.textContent = playerWon
-        ? `Hai distrutto la flotta avversaria con ${game.playerShotCount} colpi!`
-        : "La tua flotta è stata affondata dall'avversario.";
-
+    if (ui.resultTitle) ui.resultTitle.textContent = playerWon ? "Vittoria!" : "Sconfitta";
+    if (ui.resultMessage) ui.resultMessage.textContent = playerWon ? "Hai distrutto la flotta avversaria!" : "La tua flotta è stata affondata.";
     playSound(playerWon ? "victory" : "defeat");
 
-    // Pulisce la stanza su Firebase alla fine della partita
     if (game.playerRole === "p1" && game.roomCode) {
-        const roomRef = ref(db, `battaglia_rooms/${game.roomCode}`);
-        remove(roomRef).catch(err => console.error("Errore pulizia stanza:", err));
+        remove(ref(db, `battaglia_rooms/${game.roomCode}`)).catch(() => { });
     }
-
-    setTimeout(() => ui.resultDialog.showModal(), 1000);
+    setTimeout(() => { if (ui.resultDialog) ui.resultDialog.showModal(); }, 1000);
 }
 
+// --- RENDER COMUNE DELLE PLANCE ---
+
 function renderBattleBoards() {
-    // ==========================================
-    // TABELLONE PERSONALE
-    // ==========================================
-    createBoard(ui.playerBoard, "player");
-    const pBoard = ui.playerBoard.querySelector(".board");
-
-    game.playerShips.forEach(ship => {
-        if (ship.cells.length) {
-            addShipOverlay(pBoard, ship);
+    if (ui.playerBoard) {
+        createBoard(ui.playerBoard, "player");
+        const pBoard = ui.playerBoard.querySelector(".board");
+        if (pBoard) {
+            game.playerShips.forEach(ship => {
+                if (ship.cells.length) addShipOverlay(pBoard, ship);
+            });
         }
-    });
+    }
 
+    const incomingShots = game.opponentShots;
     for (let r = 0; r < SIZE; r++) {
         for (let c = 0; c < SIZE; c++) {
             const cell = getBoardCell(ui.playerBoard, r, c);
             const k = key(r, c);
             const ship = shipAt(game.playerShips, r, c);
 
-            if (game.opponentShots.has(k)) {
+            if (cell && incomingShots.has(k)) {
                 if (ship) {
                     cell.classList.add("hit");
                     addFireOverlay(cell);
@@ -803,20 +1162,18 @@ function renderBattleBoards() {
         }
     }
 
-    // ==========================================
-    // TABELLONE AVVERSARIO
-    // ==========================================
-    createBoard(ui.enemyBoard, "enemy");
-    const eBoard = ui.enemyBoard.querySelector(".board");
+    if (ui.enemyBoard) {
+        createBoard(ui.enemyBoard, "enemy");
+        const eBoard = ui.enemyBoard.querySelector(".board");
+        const targetShips = game.mode === "single" ? game.enemyShips : game.opponentShips;
 
-    game.opponentShips.forEach(ship => {
-        const isSunk = ship.cells.every(([r, c]) =>
-            game.myShots.has(key(r, c))
-        );
-        if (isSunk) {
-            addShipOverlay(eBoard, ship);
+        if (eBoard) {
+            targetShips.forEach(ship => {
+                const isSunk = game.mode === "single" ? ship.sunk : ship.cells.every(([r, c]) => game.myShots.has(key(r, c)));
+                if (isSunk) addShipOverlay(eBoard, ship);
+            });
         }
-    });
+    }
 
     for (let r = 0; r < SIZE; r++) {
         for (let c = 0; c < SIZE; c++) {
@@ -824,49 +1181,92 @@ function renderBattleBoards() {
             const k = key(r, c);
             const isShot = game.myShots.has(k);
 
-            cell.disabled = game.phase !== "battle" || isShot;
+            if (cell) {
+                cell.disabled = game.phase !== "battle" || isShot || game.busy;
 
-            if (isShot) {
-                const wasHit = game.myShotResults[k] === true;
-                if (wasHit) {
-                    cell.classList.add("hit");
-                    addFireOverlay(cell);
-                } else {
-                    cell.classList.add("miss");
+                if (isShot) {
+                    const wasHit = game.mode === "single" ? !!shipAt(game.enemyShips, r, c) : game.myShotResults[k] === true;
+                    if (wasHit) {
+                        cell.classList.add("hit");
+                        addFireOverlay(cell);
+                    } else {
+                        cell.classList.add("miss");
+                    }
                 }
             }
         }
     }
+
+    if (game.mode === "single") {
+        if (ui.playerShipsLeft) ui.playerShipsLeft.textContent = game.playerShips.filter(s => !s.sunk).length;
+        if (ui.enemyShipsLeft) ui.enemyShipsLeft.textContent = game.enemyShips.filter(s => !s.sunk).length;
+        if (ui.turn) ui.turn.textContent = game.busy ? "Computer" : "Tuo turno";
+    }
 }
 
-ui.rotate.addEventListener("click", () => {
-    game.orientation = game.orientation === "H" ? "V" : "H";
-    ui.rotate.textContent = `↻ Ruota: ${game.orientation === "H" ? "orizzontale" : "verticale"}`;
-    playSound("click");
-});
+// --- GESTIONE AUDIO E PULSANTI GENERALI ---
 
-ui.autoPlace.addEventListener("click", autoPlacePlayer);
+if (ui.rotate) {
+    ui.rotate.addEventListener("click", () => {
+        game.orientation = game.orientation === "H" ? "V" : "H";
+        ui.rotate.textContent = `↻ Ruota: ${game.orientation === "H" ? "orizzontale" : "verticale"}`;
+        playSound("click");
+    });
+}
 
-ui.soundToggle.addEventListener("click", () => {
-    game.soundEnabled = !game.soundEnabled;
-    ui.soundToggle.textContent = game.soundEnabled ? "♫ Audio ON" : "♫ Audio OFF";
-    if (game.soundEnabled) playSound("click");
-});
+if (ui.autoPlace) {
+    ui.autoPlace.addEventListener("click", autoPlacePlayer);
+}
 
-ui.roomMenuBtn.addEventListener("click", () => {
-    if (confirm("Vuoi tornare alla schermata della stanza?")) {
-        location.reload();
-    }
-});
+if (ui.soundToggle) {
+    ui.soundToggle.addEventListener("click", () => {
+        game.soundEnabled = !game.soundEnabled;
+        ui.soundToggle.textContent = game.soundEnabled ? "♫ Audio ON" : "♫ Audio OFF";
+        ui.soundToggle.setAttribute("aria-pressed", String(game.soundEnabled));
+        if (game.soundEnabled) playSound("click");
+    });
+}
 
-ui.rulesToggle.addEventListener("click", () => ui.rulesDialog.showModal());
-ui.playAgain.addEventListener("click", () => location.reload());
+if (ui.fullscreenToggle) {
+    ui.fullscreenToggle.addEventListener("click", () => {
+        playSound("click");
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(err => {
+                console.warn("Impossibile attivare lo schermo intero:", err);
+            });
+        } else {
+            document.exitFullscreen().catch(() => { });
+        }
+    });
+
+    document.addEventListener("fullscreenchange", () => {
+        if (document.fullscreenElement) {
+            ui.fullscreenToggle.textContent = "⛶ Esci";
+        } else {
+            ui.fullscreenToggle.textContent = "⛶ Schermo intero";
+        }
+    });
+}
+
+if (ui.roomMenuBtn) {
+    ui.roomMenuBtn.addEventListener("click", () => {
+        if (confirm("Vuoi tornare alla schermata principale?")) location.reload();
+    });
+}
+
+if (ui.rulesToggle && ui.rulesDialog) {
+    ui.rulesToggle.addEventListener("click", () => ui.rulesDialog.showModal());
+}
+
+if (ui.playAgain) {
+    ui.playAgain.addEventListener("click", () => location.reload());
+}
 
 document.addEventListener("keydown", (e) => {
     if (e.code === "Space" && game.phase === "setup") {
         e.preventDefault();
         game.orientation = game.orientation === "H" ? "V" : "H";
-        ui.rotate.textContent = `↻ Ruota: ${game.orientation === "H" ? "orizzontale" : "verticale"}`;
+        if (ui.rotate) ui.rotate.textContent = `↻ Ruota: ${game.orientation === "H" ? "orizzontale" : "verticale"}`;
         playSound("click");
     }
 });

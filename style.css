@@ -759,3 +759,29 @@ margin-bottom: 9px;
         margin-right: auto;
     }
 }
+
+/* --- STILI AGGIUNTI PER SCELTA MODALITÀ E DIFFICOLTÀ --- */
+
+#mode-selector {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+#single-options label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--muted);
+}
+
+#single-options select {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #0b3449;
+    border: 1px solid var(--line);
+    color: var(--text);
+    font-size: 14px;
+}
