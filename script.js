@@ -572,7 +572,9 @@ function shuffleRanks() {
 }
 
 function setupRankScreen() {
-    game.shuffledRanks = shuffleRanks();
+    if (!game.shuffledRanks || game.shuffledRanks.length !== 5) {
+        game.shuffledRanks = shuffleRanks();
+    }
     game.myRank = null;
     game.myStarIndex = null;
     game.battleStartedByMe = false;
@@ -621,7 +623,8 @@ function handleStarSelection(starIndex) {
     }
 
     update(ref(db, `battaglia_rooms/${game.roomCode}/${game.playerRole}`), {
-        rank: chosenRank
+        rank: chosenRank,
+        starIndex: starIndex
     }).catch(err => console.error("Errore salvataggio grado:", err));
 }
 
@@ -638,6 +641,7 @@ function startMultiplayerGame() {
         ready: true,
         battleReady: false,
         rank: null,
+        starIndex: null,
         ships: serializedShips
     }).then(() => {
         game.phase = "rank_selection";
@@ -910,8 +914,12 @@ async function connectToRoom(code) {
                 return {
                     p1: { connected: true, ready: false, sessionId: MY_SESSION_ID },
                     p2: { connected: false, ready: false, sessionId: null },
+                    rankOrder: shuffleRanks(),
                     turn: null
                 };
+            }
+            if (!current.rankOrder) {
+                current.rankOrder = shuffleRanks();
             }
             if (!p1Online || current.p1?.sessionId === MY_SESSION_ID) {
                 current.p1 = { connected: true, ready: false, sessionId: MY_SESSION_ID };
@@ -958,6 +966,11 @@ function initFirebaseListeners(roomRefPath) {
         const data = snapshot.val();
         if (!data) return;
 
+        // Sincronizza l'ordine condiviso delle 5 stelle della stanza
+        if (Array.isArray(data.rankOrder) && data.rankOrder.length === 5) {
+            game.shuffledRanks = data.rankOrder;
+        }
+
         const p1 = data.p1 || {};
         const p2 = data.p2 || {};
         const myData = data[game.playerRole] || {};
@@ -974,6 +987,16 @@ function initFirebaseListeners(roomRefPath) {
                 if (ui.opponentRankText) {
                     ui.opponentRankText.textContent = `L'avversario gioca con il grado di ${opponentData.rank.name}`;
                 }
+
+                // Se non ho ancora scelto, disabilito la stella già presa dall'avversario
+                if (!game.myRank && typeof opponentData.starIndex === "number" && ui.starsContainer) {
+                    const oppBtn = ui.starsContainer.querySelector(`.star-btn[data-star="${opponentData.starIndex}"]`);
+                    if (oppBtn && !oppBtn.disabled) {
+                        oppBtn.disabled = true;
+                        oppBtn.title = `Già scelta dall'avversario (${opponentData.rank.name})`;
+                        oppBtn.innerHTML = `★<div style="font-size: 11px; margin-top: 6px; color: #e8bd68;">Presa</div>`;
+                    }
+                }
             } else {
                 if (ui.opponentRankText) {
                     ui.opponentRankText.textContent = "In attesa che l'avversario scelga la sua stella...";
@@ -982,17 +1005,8 @@ function initFirebaseListeners(roomRefPath) {
 
             // Entrambi hanno scelto la stella e schierato le navi
             if (p1.ready && p2.ready && p1.rank && p2.rank) {
-                let firstTurn = "p1";
-                if (p2.rank.level > p1.rank.level) {
-                    firstTurn = "p2";
-                } else if (p1.rank.level > p2.rank.level) {
-                    firstTurn = "p1";
-                } else {
-                    // In caso di grado identico, inizia Giocatore 1
-                    firstTurn = "p1";
-                }
+                const firstTurn = p2.rank.level > p1.rank.level ? "p2" : "p1";
 
-                // Il Giocatore 1 scrive in modo univoco chi inizia per primo su Firebase
                 if (game.playerRole === "p1" && !data.turn) {
                     set(ref(db, `${roomRefPath}/turn`), firstTurn);
                 }
@@ -1001,15 +1015,9 @@ function initFirebaseListeners(roomRefPath) {
                 const highestRankName = firstTurn === "p1" ? p1.rank.name : p2.rank.name;
 
                 if (ui.rankTurnAnnouncement) {
-                    if (p1.rank.level === p2.rank.level) {
-                        ui.rankTurnAnnouncement.textContent = iAmFirst
-                            ? `Pari grado (${highestRankName})! Giochi per primo tu.`
-                            : `Pari grado (${highestRankName})! Gioca per primo l'avversario.`;
-                    } else {
-                        ui.rankTurnAnnouncement.textContent = iAmFirst
-                            ? `${highestRankName} è il più alto in grado: giocherai per primo!`
-                            : `${highestRankName} è il più alto in grado: giocherà per primo l'avversario!`;
-                    }
+                    ui.rankTurnAnnouncement.textContent = iAmFirst
+                        ? `${highestRankName} è il più alto in grado: giocherai per primo!`
+                        : `${highestRankName} è il più alto in grado: giocherà per primo l'avversario!`;
                 }
 
                 if (ui.beginBattleBtn && !game.battleStartedByMe) {
@@ -1021,7 +1029,7 @@ function initFirebaseListeners(roomRefPath) {
                 }
             }
 
-            // Quando entrambi cliccano "Inizia la Battaglia" (o l'avversario ha già cliccato e noi anche)
+            // Quando entrambi cliccano "Inizia la Battaglia"
             if (p1.battleReady && p2.battleReady && data.turn) {
                 game.phase = "battle";
                 if (ui.rankPanel) ui.rankPanel.classList.add("hidden");
