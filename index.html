@@ -217,14 +217,15 @@
         </form>
     </dialog>
 
-    <dialog id="result-dialog" class="modal result-modal">
+    <dialog id="room-confirm-dialog" class="modal result-modal">
         <form method="dialog">
-            <p class="eyebrow">MISSIONE CONCLUSA</p>
-            <h2 id="result-title">Vittoria!</h2>
-            <p id="result-message"></p>
+            <button class="modal-close" aria-label="Chiudi">×</button>
+            <p class="eyebrow">NAVIGAZIONE</p>
+            <h2>Torna alla Home</h2>
+            <p>Vuoi abbandonare la partita attuale e tornare alla schermata principale?</p>
             <div class="result-actions">
-                <button class="button button-primary" id="play-again" type="button">Torna alla Home</button>
-                <button class="button button-quiet" type="submit">Chiudi</button>
+                <button class="button button-primary" id="confirm-leave-room" type="button">Sì, torna alla Home</button>
+                <button class="button button-quiet" type="submit">Annulla</button>
             </div>
         </form>
     </dialog>

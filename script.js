@@ -106,6 +106,8 @@ const ui = {
     opponentRankText: $("opponent-rank-text"),
     rankTurnAnnouncement: $("rank-turn-announcement"),
     beginBattleBtn: $("begin-battle-btn"),
+    roomConfirmDialog: $("room-confirm-dialog"),
+    confirmLeaveRoom: $("confirm-leave-room"),
 };
 
 const RANKS = [
@@ -1256,9 +1258,19 @@ if (ui.fullscreenToggle) {
     });
 }
 
-if (ui.roomMenuBtn) {
+if (ui.roomMenuBtn && ui.roomConfirmDialog) {
     ui.roomMenuBtn.addEventListener("click", () => {
-        if (confirm("Vuoi tornare alla schermata principale?")) location.reload();
+        playSound("click");
+        // Se siamo già nella schermata iniziale, non serve chiedere conferma
+        if (game.phase === "room") return;
+        ui.roomConfirmDialog.showModal();
+    });
+}
+
+if (ui.confirmLeaveRoom) {
+    ui.confirmLeaveRoom.addEventListener("click", () => {
+        playSound("click");
+        location.reload();
     });
 }
 
